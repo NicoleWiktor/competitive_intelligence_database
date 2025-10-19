@@ -30,12 +30,5 @@ def preview_chunks(chunks: Iterable[str], limit: int = 2) -> None:
         print()
 
 
-if __name__ == "__main__":
-    demo = (
-        "LangChain supports modular pipelines for AI workflows. "
-        "These workflows include document loading, chunking, retrieval, and LLM integration. "
-        "LangChain simplifies AI model deployment."
-    )
-    cs = recursive_character_split(demo)
-    preview_chunks(cs, limit=3)
+
 

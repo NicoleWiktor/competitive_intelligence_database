@@ -3,3 +3,4 @@ python-dotenv>=1.0.1
 langchain-text-splitters>=0.2.3
 langchain-openai>=0.2.0
 langgraph>=0.2.34
+neo4j>=5.18.0

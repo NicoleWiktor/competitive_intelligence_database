@@ -30,7 +30,7 @@ def _build_prompt(chunk_text: str, schema: Dict[str, Any]) -> str:
         + json.dumps(schema)
         + "\n\nText to analyze:\n"
         + chunk_text
-        + "\n\nReturn ONLY the filled in JSON based on the text, no other text or commentary. If content does not exist in the text, return a empty stinge in the schema."
+        + "\n\nReturn ONLY the filled in JSON based on the text, no other text or commentary. If content does not exist in the text, return a empty sting in the schema."
     )
 
 

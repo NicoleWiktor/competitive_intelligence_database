@@ -9,6 +9,7 @@ from langgraph.graph import START, StateGraph
 from src.pipeline.query_node import search_node
 from src.pipeline.extract_node import extract_node
 from src.pipeline.llm_node import llm_state_node
+from src.pipeline.neo4j_write_node import write_node
 
 
 class PipelineState(TypedDict, total=False):
@@ -26,9 +27,11 @@ def build_graph() -> Any:
     g.add_node("search", search_node)
     g.add_node("extract", extract_node)
     g.add_node("llm", llm_state_node)
+    g.add_node("write", write_node)
     g.add_edge(START, "search")
     g.add_edge("search", "extract")
     g.add_edge("extract", "llm")
+    g.add_edge("llm", "write")
     return g.compile()
 
 

@@ -38,3 +38,12 @@ def get_openai_api_key() -> str:
         )
     return key
 
+
+# ----- Neo4j -----
+def get_neo4j_config() -> dict:
+    return {
+        "uri": os.getenv("NEO4J_URI", ""),
+        "user": os.getenv("NEO4J_USER", ""),
+        "password": os.getenv("NEO4J_PASSWORD", ""),
+    }
+
