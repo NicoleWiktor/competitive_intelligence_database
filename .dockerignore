@@ -1,0 +1,38 @@
+# Ignore Python cache & bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore virtual environments
+venv/
+.env
+.env.*
+*.env
+
+# Ignore git and local config
+.git
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+
+# Ignore logs & temporary data
+*.log
+*.pid
+*.tmp
+*.bak
+*.swp
+
+# Ignore test caches
+.pytest_cache/
+coverage/
+htmlcov/
+
+# Ignore data outputs and other heavy local folders
+data/raw/
+data/processed/
+data/outputs/
+
+# Docker-specific
+docker-compose.yml

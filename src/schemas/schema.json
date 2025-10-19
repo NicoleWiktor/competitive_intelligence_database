@@ -1,0 +1,18 @@
+{
+    "Industry": "",
+    "CustomerSegment": "",
+    "CustomerNeed": [],
+    "HoneywellProduct": "",
+    "Competitor": "",
+    "CompetitiveProduct": "",
+    "Relationships": [
+      { "source_type": "", 
+      "source": "", 
+      "relationship": 
+      "HAS_SEGMENT|HAS_NEED|ADDRESSES_NEED|USED_IN|OFFERS_PRODUCT|COMPETES_WITH", 
+      "target_type": "", 
+      "target": "" }
+    ],
+    "Doc": { "source_url": "" },
+    "Flags": { "is_honeywell_product": false, "manufacturer": "" }
+  }
