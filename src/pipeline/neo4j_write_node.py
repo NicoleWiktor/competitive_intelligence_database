@@ -38,10 +38,11 @@ def run_neo4j(cypher: str) -> None:
 
 
 def write_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Terminal node: writes extracted data to Neo4j. Returns empty dict (no state updates)."""
     data = state.get("data", {})
     cypher = to_merge_cypher(data)
     print(cypher)  # optional for inspection
     run_neo4j(cypher)
-    return state
+    return {}  # Terminal node - no state updates needed
 
 

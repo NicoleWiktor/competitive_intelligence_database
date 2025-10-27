@@ -27,49 +27,72 @@ def to_merge_cypher(data: Dict) -> str:
     ]
 
     # Nodes
+    # Handle source_url as either string or list of strings
+    raw_url = (data.get("Doc") or {}).get("source_url") or ""
+    if isinstance(raw_url, list):
+        doc_url = _esc(", ".join(raw_url))  # Join multiple URLs with comma
+    else:
+        doc_url = _esc(raw_url)
+    
     if data.get("Industry"):
-        stmts.append(f"MERGE (:Industry {{name: '{_esc(data['Industry'])}'}});")
+        stmts.append(
+            f"MERGE (i:Industry {{name: '{_esc(data['Industry'])}'}}) SET i.source_url = '{doc_url}';"
+        )
     if data.get("CustomerSegment"):
-        stmts.append(f"MERGE (:CustomerSegment {{name: '{_esc(data['CustomerSegment'])}'}});")
+        stmts.append(
+            f"MERGE (s:CustomerSegment {{name: '{_esc(data['CustomerSegment'])}'}}) SET s.source_url = '{doc_url}';"
+        )
     for need in data.get("CustomerNeed", []) or []:
-        stmts.append(f"MERGE (:CustomerNeed {{name: '{_esc(need)}'}});")
+        stmts.append(
+            f"MERGE (n:CustomerNeed {{name: '{_esc(need)}'}}) SET n.source_url = '{doc_url}';"
+        )
 
     if data.get("HoneywellProduct"):
         stmts.append(
             f"MERGE (p:Product {{name: '{_esc(data['HoneywellProduct'])}'}}) "
-            f"ON CREATE SET p.manufacturer = 'Honeywell';"
+            f"ON CREATE SET p.manufacturer = 'Honeywell' SET p.source_url = '{doc_url}';"
         )
 
     if data.get("Competitor"):
-        stmts.append(f"MERGE (:Company {{name: '{_esc(data['Competitor'])}'}});")
+        stmts.append(
+            f"MERGE (c:Company {{name: '{_esc(data['Competitor'])}'}}) SET c.source_url = '{doc_url}';"
+        )
 
     if data.get("CompetitiveProduct"):
         manufacturer = _esc(data.get("Competitor", "")) if data.get("Competitor") else ""
         if manufacturer:
             stmts.append(
-                f"MERGE (p:Product {{name: '{_esc(data['CompetitiveProduct'])}'}}) ON CREATE SET p.manufacturer = '{manufacturer}';"
+                f"MERGE (p:Product {{name: '{_esc(data['CompetitiveProduct'])}'}}) ON CREATE SET p.manufacturer = '{manufacturer}' SET p.source_url = '{doc_url}';"
             )
         else:
-            stmts.append(f"MERGE (:Product {{name: '{_esc(data['CompetitiveProduct'])}'}});")
+            stmts.append(
+                f"MERGE (p:Product {{name: '{_esc(data['CompetitiveProduct'])}'}}) SET p.source_url = '{doc_url}';"
+            )
 
     # Ensure nodes for any labels referenced only in Relationships
     for r in data.get("Relationships", []) or []:
         for label, name in ((r.get("source_type"), r.get("source")), (r.get("target_type"), r.get("target"))):
             if not name:
                 continue
-            label = (label or "").strip()
+            raw = (label or "").strip()
+            real_label = "Company" if raw == "Brand" else raw
+            if not real_label:
+                real_label = "Product"
             n = _esc(name)
-            if label in ("Industry", "CustomerSegment", "CustomerNeed"):
-                stmts.append(f"MERGE (:{label} {{name: '{n}'}});")
-            elif label in ("Company", "Brand"):
-                stmts.append(f"MERGE (:{label} {{name: '{n}'}});")
-            elif label == "Product":
-                stmts.append(f"MERGE (:Product {{name: '{n}'}});")
+            if real_label in ("Industry", "CustomerSegment", "CustomerNeed"):
+                stmts.append(f"MERGE (x:{real_label} {{name: '{n}'}}) SET x.source_url = '{doc_url}';")
+            elif real_label in ("Company",):
+                stmts.append(f"MERGE (x:{real_label} {{name: '{n}'}}) SET x.source_url = '{doc_url}';")
+            elif real_label == "Product":
+                stmts.append(f"MERGE (x:Product {{name: '{n}'}}) SET x.source_url = '{doc_url}';")
 
     # Relationships
     for r in data.get("Relationships", []) or []:
-        s_label = (r.get("source_type") or "").strip() or "Product"
-        t_label = (r.get("target_type") or "").strip() or "Product"
+        # Normalize label values: treat Brand as Company
+        s_label_raw = (r.get("source_type") or "").strip()
+        t_label_raw = (r.get("target_type") or "").strip()
+        s_label = "Company" if s_label_raw == "Brand" else (s_label_raw or "Product")
+        t_label = "Company" if t_label_raw == "Brand" else (t_label_raw or "Product")
         s_name = _esc(r.get("source") or "")
         t_name = _esc(r.get("target") or "")
         rel = _esc((r.get("relationship") or "").upper().replace(" ", "_"))
@@ -78,8 +101,12 @@ def to_merge_cypher(data: Dict) -> str:
         stmts.append(
             "MATCH (s:" + s_label + " {name: '" + s_name + "'}), "
             "(t:" + t_label + " {name: '" + t_name + "'}) "
-            "MERGE (s)-[:" + rel + "]->(t);"
+            "MERGE (s)-[r:" + rel + "]->(t) SET r.source_url = '" + doc_url + "';"
         )
+
+    # Seed MUST-HAVE edge from top-level fields: CustomerSegment -> HAS_NEED -> CustomerNeed
+    # No additional inferred relationships; mirror only JSON Relationships
+
 
     cypher = "\n".join(stmts)
     # Debug print
