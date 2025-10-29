@@ -1,10 +1,10 @@
-## Competitive Intelligence Graph - Setup and Usage
+## Competitive Intelligence Datebase
 
 ### Goals
-- To build a structured knowledge graph that connects industries, customer segments, needs, and products to help Honeywell analyze its portfolio and competition.
+- To build a structured data store (knowledge graph with neo4j) that connects industries, customer segments, needs, and products to help Honeywell analyze its portfolio and competition.
 - To build an unstructured database of public sources (e.g., trade articles, product catalogs, reviews) to validate and support insights from the structured data.
 
-### Pipeline Overview
+### Current Pipeline Overview
 
 The pipeline uses LangGraph to iteratively extract competitive intelligence data into a knowledge graph:
 
@@ -79,7 +79,8 @@ python -m src.pipeline.graph_builder
 
 ### 6) View the knowledge graph
 Open Neo4j Browser at `http://localhost:7474` and run queries like:
-```MATCH (n)-[r]->(m) RETURN n, r, m
+```
+MATCH (n)-[r]->(m) RETURN n, r, m;
 ```
 
 Reset the database:
@@ -95,7 +96,6 @@ The pipeline graph (`langgraph_pipeline.png`) is included in the repo. To regene
 python visualize_pipeline.py
 ```
 
-This saves `langgraph_pipeline.png` to the project root. If PNG generation fails, it prints ASCII or Mermaid diagrams instead.
 
 
 

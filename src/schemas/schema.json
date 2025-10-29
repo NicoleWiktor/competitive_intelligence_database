@@ -9,7 +9,7 @@
       { "source_type": "", 
       "source": "", 
       "relationship": 
-      "HAS_SEGMENT|HAS_NEED|ADDRESSES_NEED|USED_IN|OFFERS_PRODUCT|COMPETES_WITH", 
+      "OFFERS_PRODUCT|COMPETES_WITH", 
       "target_type": "", 
       "target": "" }
     ],
