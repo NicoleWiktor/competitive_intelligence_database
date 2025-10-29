@@ -23,32 +23,23 @@ def _make_llm() -> ChatOpenAI:
 
 
 def _build_prompt(chunk_text: str, schema: Dict[str, Any]) -> str:
-    return """Extract Honeywell competitors and ONLY their SPECIFIC PRODUCT MODEL NAMES/NUMBERS.
-
-Return JSON: {"Relationships": [...]}
-
-Relationship format: {"source_type": "Company", "source": "Name", "relationship": "TYPE", "target_type": "Company/Product", "target": "Name"}
-
-RULES:
-
-1. COMPETES_WITH relationships:
-   - Format: {"source_type": "Company", "source": "Honeywell", "relationship": "COMPETES_WITH", "target_type": "Company", "target": "CompetitorName"}
-   - Extract up to 5 competitors max
-
-2. OFFERS_PRODUCT relationships - READ CAREFULLY:
-   - Format: {"source_type": "Company", "source": "CompanyName", "relationship": "OFFERS_PRODUCT", "target_type": "Product", "target": "ModelName"}
-   - Extract up to 3 products per company max. View the JSON, if you already see 3 products, do not extract more. 
-   
-   ✅ ONLY extract if text shows ACTUAL MODEL NAME/NUMBER:
-   - YES: "3051", "A-10", "S-20", "PMD75", "U5300", "MPM281", "HK7", "Rosemount 3051"
-   - NO GENERIC PRODUCT NAMES: "pressure transmitter", "pressure sensor", "transmitter", "sensor"
-   - If the text does not contain the information you need, leave it empty.
-   - DO NOT PUT ModelName, model, N/A, Unknown, etc. in the target field. Only EMPTY STRING if no real name.
-   
-3. Normalize company names consistently (Wika not WIKA, MicroSensor not Microsensor)
-
-TEXT:
-""" + chunk_text[:5000] + "\n\nReturn JSON. Remember: ONLY extract specific model names, NOT generic sensor types!"
+    """Prompt that embeds the schema and enforces strict extraction rules."""
+    return (
+        "Extract competitive landscape for Honeywell from the text.\n\n"
+        + "SCHEMA (return EXACTLY this shape):\n"
+        + json.dumps(schema) + "\n\n"
+        + "FILLING RULES:\n"
+        + "- Put companies and products primarily in Relationships.\n"
+        + "- COMPETES_WITH: {source_type:'Company', source:'Honeywell', relationship:'COMPETES_WITH', target_type:'Company', target:'<CompetitorName>'}.\n"
+        + "- OFFERS_PRODUCT: {source_type:'Company', source:'<Company>', relationship:'OFFERS_PRODUCT', target_type:'Product', target:'<ModelNameOrNumber>'}.\n"
+        + "- Extract ALL page mentions applicable to the schema: for EVERY competitor on the page create COMPETES_WITH; for EVERY specific model create OFFERS_PRODUCT (subject to limits). Do not stop at the first match.\n"
+        + "- Only extract OFFERS_PRODUCT if the model name/number is SPECIFIC (e.g., 'Rosemount 3051', 'U5300', 'Cerabar PMP21').\n"
+        + "- Do NOT use generic terms (e.g., 'pressure transmitter', 'sensor', 'piezoresistive sensor').\n"
+        + "- Never output placeholders like 'ModelName'/'Unknown'; leave empty instead.\n"
+        + "- Max competitors: 5; Max products per competitor: 3.\n"
+        + "- Normalize company names consistently (e.g., 'Wika' not 'WIKA'. Use 'Micro Sensor' for variants like 'Microsensor' or 'Micro Sensor Co.,Ltd').\n\n"
+        + "TEXT:\n" + chunk_text[:5000] + "\n\nReturn ONLY valid JSON that matches the schema above."
+    )
 
 
 def extract_with_schema(schema: Dict[str, Any], raw_content: str, source_url: str) -> Dict[str, Any]:
@@ -111,21 +102,19 @@ def llm_state_node(state: Dict[str, Any]) -> Dict[str, Any]:
     if not results:
         return {"data": schema}
     
-    # Bundle search results (limit to prevent huge prompts)
-    MAX_CHARS_PER_RESULT = 8000  # ~2k tokens per result
-    parts: List[str] = []
+    # Use ONLY the first Tavily result this iteration (single-page loop)
+    MAX_CHARS_PER_RESULT = 8000
     urls: List[str] = []
-    
-    for r in results:
-        text = r.get("raw_content") or r.get("content") or ""
-        if text:
-            url = r.get("url", "")
-            urls.append(url)
-            if len(text) > MAX_CHARS_PER_RESULT:
-                text = text[:MAX_CHARS_PER_RESULT]
-            parts.append(f"SOURCE: {url}\n{text}")
-    
-    raw_bundle = "\n\n---\n\n".join(parts)
+    if results:
+        r0 = results[0]
+        text = r0.get("raw_content") or r0.get("content") or ""
+        url = r0.get("url", "")
+        urls.append(url)
+        if len(text) > MAX_CHARS_PER_RESULT:
+            text = text[:MAX_CHARS_PER_RESULT]
+        raw_bundle = f"SOURCE: {url}\n{text}"
+    else:
+        raw_bundle = ""
     
     print(f"[llm] Iteration {iteration}, bundle: {len(raw_bundle)} chars")
     

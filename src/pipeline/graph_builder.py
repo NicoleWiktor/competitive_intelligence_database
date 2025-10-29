@@ -96,7 +96,8 @@ if __name__ == "__main__":
     # Put your Tavily query here:
     QUERY = "pressure transmitters in process industries with customer reviews and brands"
     # Limit results to avoid context overflow (each result can be large)
-    MAX_RESULTS = 2  # Reduced to 2 to stay within context limits
+    # Process ONE Tavily page per iteration for tighter control
+    MAX_RESULTS = 1
     MAX_ITERATIONS = 18  # Max number of query refinement loops (Phase 1: ~2, Phase 2: ~15 for 5 competitors × 3 attempts)
     MAX_COMPETITORS = 5  # Focus on top 5 competitors only
     MAX_PRODUCTS_PER_COMPANY = 3  # Limit products per competitor to avoid clutter
