@@ -20,3 +20,4 @@ venv/
 # Docker
 *.log
 *.pid
+SYSTEM_EXPLANATION.md

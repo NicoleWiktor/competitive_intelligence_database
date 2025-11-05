@@ -1,188 +1,383 @@
+"""
+LLM Node - Extracts structured competitive intelligence from web content.
+
+This node uses GPT-4o-mini to analyze web pages and extract:
+- Competitor companies (COMPETES_WITH relationships)
+- Products offered by competitors (OFFERS_PRODUCT relationships)  
+- Prices for products (HAS_PRICE relationships)
+
+Key Features:
+- Price validation: Rejects hallucinated prices by checking source text
+- Product name consistency: Passes existing product names to maintain consistency
+- Data merging: Accumulates data across iterations up to configured limits
+"""
+
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
 from langchain_openai import ChatOpenAI
-import re
-
 from src.config.settings import get_openai_api_key
 
 
-def _load_schema() -> Dict[str, Any]:
-    return json.loads(Path("src/schemas/schema.json").read_text(encoding="utf-8"))
+def _normalize_company_name(name: str) -> str:
+    """
+    Standardize company names for consistency across extractions.
+    
+    Examples: "sick" -> "Sick", "e+h" -> "Endress+Hauser", "microsensor" -> "Micro Sensor"
+    """
+    if not name:
+        return name
+    
+    name = name.strip()
+    name_lower = name.lower()
+    
+    # Common company normalizations
+    if name_lower == "sick":
+        return "Sick"
+    if name_lower in ["wika", "emerson", "siemens", "abb", "yokogawa"]:
+        return name.capitalize()
+    if "endress" in name_lower and "hauser" in name_lower:
+        return "Endress+Hauser"
+    if "micro" in name_lower and "sensor" in name_lower:
+        return "Micro Sensor"
+    if "te connectivity" in name_lower:
+        return "TE Connectivity"
+    if "holykell" in name_lower:
+        return "Holykell"
+    if "honeywell" in name_lower:
+        return "Honeywell"
+    
+    return name
 
 
-def _make_llm() -> ChatOpenAI:
-    return ChatOpenAI(
+def _build_prompt(text: str, schema: Dict[str, Any], existing_products: dict = None) -> str:
+    """
+    Build extraction prompt with schema and existing product context.
+    
+    The prompt instructs the LLM to:
+    1. Extract ALL competitors mentioned (up to 5)
+    2. Extract specific product model numbers
+    3. Extract prices with currency symbols
+    4. Use exact product names consistently
+    5. Only extract what's visible in the text (no hallucinations)
+    """
+    # Build context of existing products for name consistency
+    product_context = ""
+    if existing_products:
+        product_context = "\n=== EXISTING PRODUCTS (USE THESE EXACT NAMES) ===\n"
+        for company, products in existing_products.items():
+            for product in products:
+                product_context += f"- {company} → '{product}'\n"
+        product_context += "\n⚠️ When creating HAS_PRICE, use these EXACT product names!\n\n"
+    
+    return (
+        "Extract competitive intelligence for Honeywell pressure transmitters.\n\n"
+        + product_context
+        + "SCHEMA:\n" + json.dumps(schema, indent=2) + "\n\n"
+        
+        + "RULES:\n"
+        + "1. COMPETES_WITH: Honeywell → Competitor Company Name\n"
+        + "   Example: {source:'Honeywell', relationship:'COMPETES_WITH', target:'Wika'}\n\n"
+        
+        + "2. OFFERS_PRODUCT: Company → Specific Product Model\n"
+        + "   Example: {source:'Wika', relationship:'OFFERS_PRODUCT', target:'A-10'}\n"
+        + "   - Extract specific model numbers (A-10, PMP21, MPM281 Series, etc.)\n"
+        + "   - NOT generic terms like 'pressure transmitter'\n\n"
+        
+        + "3. HAS_PRICE: Product → Price\n"
+        + "   Example: {source:'A-10', relationship:'HAS_PRICE', target:'$161.09'}\n"
+        + "   - Use EXACT product name from OFFERS_PRODUCT\n"
+        + "   - Only include prices with currency symbols ($, £, €, ¥)\n\n"
+        
+        + "CRITICAL REQUIREMENTS:\n"
+        + "- Extract ALL competitors in the text (up to 5 maximum)\n"
+        + "- Use full company names (Endress+Hauser not E+H)\n"
+        + "- Product names must be IDENTICAL in OFFERS_PRODUCT and HAS_PRICE\n"
+        + "- ONLY extract data that's VISIBLE in this text - no guessing or memory\n"
+        + "- For prices: must see currency symbol + number in the text\n\n"
+        
+        + "TEXT:\n" + text[:5000] + "\n\n"
+        + "Return valid JSON with the schema structure."
+    )
+
+
+def _coerce_to_json(text: str) -> Dict[str, Any]:
+    """
+    Extract JSON from LLM response, handling various formats.
+    
+    Tries multiple strategies:
+    1. Direct JSON parse
+    2. Extract from ```json code blocks
+    3. Find first { to last }
+    
+    If LLM returns an array, take the first element.
+    """
+    if not text:
+        return {"Relationships": []}
+    
+    # Try direct parse
+    try:
+        parsed = json.loads(text)
+        # If it's a list, take the first element
+        if isinstance(parsed, list):
+            return parsed[0] if parsed else {"Relationships": []}
+        return parsed
+    except Exception:
+        pass
+    
+    # Try extracting from code block
+    match = re.search(r"```json\s*([\s\S]*?)```", text)
+    if match:
+        try:
+            parsed = json.loads(match.group(1))
+            # If it's a list, take the first element
+            if isinstance(parsed, list):
+                return parsed[0] if parsed else {"Relationships": []}
+            return parsed
+        except Exception:
+            pass
+    
+    # Try finding JSON between first { and last }
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            parsed = json.loads(text[start:end + 1])
+            # If it's a list, take the first element
+            if isinstance(parsed, list):
+                return parsed[0] if parsed else {"Relationships": []}
+            return parsed
+        except Exception:
+            pass
+    
+    return {"Relationships": []}
+
+
+def extract_with_schema(schema: Dict[str, Any], raw_content: str, source_url: str, existing_products: dict = None) -> Dict[str, Any]:
+    """
+    Use LLM to extract structured data from raw content.
+    
+    Steps:
+    1. Build prompt with schema and existing product context
+    2. Call GPT-4o-mini for extraction
+    3. Validate HAS_PRICE relationships (check price exists in source)
+    4. Normalize company names
+    5. Tag each relationship with its source URL
+    """
+    llm = ChatOpenAI(
         api_key=get_openai_api_key(),
         model="gpt-4o-mini",
-        temperature=0,
+        temperature=0,  # Deterministic output
     )
-
-
-def _build_prompt(chunk_text: str, schema: Dict[str, Any]) -> str:
-    """Prompt that embeds the schema and enforces strict extraction rules."""
-    return (
-        "Extract competitive landscape for Honeywell from the text.\n\n"
-        + "SCHEMA (return EXACTLY this shape):\n"
-        + json.dumps(schema) + "\n\n"
-        + "FILLING RULES:\n"
-        + "- Put companies and products primarily in Relationships.\n"
-        + "- COMPETES_WITH: {source_type:'Company', source:'Honeywell', relationship:'COMPETES_WITH', target_type:'Company', target:'<CompetitorName>'}.\n"
-        + "- OFFERS_PRODUCT: {source_type:'Company', source:'<Company>', relationship:'OFFERS_PRODUCT', target_type:'Product', target:'<ModelNameOrNumber>'}.\n"
-        + "- Extract ALL page mentions applicable to the schema: for EVERY competitor on the page create COMPETES_WITH; for EVERY specific model create OFFERS_PRODUCT (subject to limits). Do not stop at the first match.\n"
-        + "- Only extract OFFERS_PRODUCT if the model name/number is SPECIFIC (e.g., 'Rosemount 3051', 'U5300', 'Cerabar PMP21').\n"
-        + "- Do NOT use generic terms (e.g., 'pressure transmitter', 'sensor', 'piezoresistive sensor').\n"
-        + "- Never output placeholders like 'ModelName'/'Unknown'; leave empty instead.\n"
-        + "- Max competitors: 5; Max products per competitor: 3.\n"
-        + "- Normalize company names consistently (e.g., 'Wika' not 'WIKA'. Use 'Micro Sensor' for variants like 'Microsensor' or 'Micro Sensor Co.,Ltd').\n\n"
-        + "TEXT:\n" + chunk_text[:5000] + "\n\nReturn ONLY valid JSON that matches the schema above."
-    )
-
-
-def extract_with_schema(schema: Dict[str, Any], raw_content: str, source_url: str) -> Dict[str, Any]:
-    """Primary entry: receive schema dict and raw text; return schema-shaped JSON."""
-    llm = _make_llm()
-    prompt = _build_prompt(raw_content, schema)
-    msg = llm.invoke(prompt)
-    txt = getattr(msg, "content", str(msg))
-    print("[llm] raw_preview=", (txt or "")[:150].replace("\n", " "))
-
-    data = _coerce_to_json(txt, schema)
     
-    # Wrap in full schema structure
-    result = {
+    prompt = _build_prompt(raw_content, schema, existing_products)
+    
+    print(f"[llm] Analyzing: {source_url}")
+    print(f"[llm] Content: {len(raw_content)} chars")
+    
+    # Call LLM
+    response = llm.invoke(prompt)
+    response_text = getattr(response, "content", str(response))
+    print(f"[llm] Response preview: {response_text[:100]}...")
+    
+    # Parse JSON
+    data = _coerce_to_json(response_text)
+    
+    # Validate and tag relationships
+    validated_rels = []
+    
+    for rel in data.get("Relationships", []):
+        # Normalize company names for consistency
+        if rel.get("source_type") == "Company":
+            rel["source"] = _normalize_company_name(rel.get("source", ""))
+        if rel.get("target_type") == "Company":
+            rel["target"] = _normalize_company_name(rel.get("target", ""))
+        
+        # CRITICAL: Validate prices to prevent hallucinations
+        if rel.get("relationship") == "HAS_PRICE":
+            price = rel.get("target", "")
+            # Extract numeric part (e.g., "161.09" from "$161.09")
+            price_numbers = re.sub(r'[^\d\.]', '', price)
+            
+            # Check if these numbers appear in the source text
+            if price_numbers and price_numbers in raw_content:
+                print(f"[llm] ✅ Validated price '{price}' found in source")
+                rel["source_url"] = source_url
+                validated_rels.append(rel)
+            else:
+                print(f"[llm] ❌ Rejected price '{price}' - not found in source")
+                continue  # Skip this hallucinated price
+        else:
+            # Tag with source and accept
+            rel["source_url"] = source_url
+            validated_rels.append(rel)
+    
+    # Wrap in schema structure
+    return {
         "Industry": "",
         "CustomerSegment": "",
         "CustomerNeed": [],
         "HoneywellProduct": "",
         "Competitor": "",
         "CompetitiveProduct": "",
-        "Relationships": data.get("Relationships", []),
+        "Relationships": validated_rels,
         "Doc": {"source_url": source_url},
         "Flags": {}
     }
-    return result
-
-
-def _coerce_to_json(text: str, fallback_schema: Dict[str, Any]) -> Dict[str, Any]:
-    if not text:
-        return {"Relationships": []}
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    m = re.search(r"```json\s*([\s\S]*?)```", text)
-    if m:
-        try:
-            return json.loads(m.group(1))
-        except Exception:
-            pass
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            return json.loads(text[start : end + 1])
-        except Exception:
-            pass
-    return {"Relationships": []}
 
 
 def llm_state_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract data from search results and merge with existing data."""
-    schema = state.get("schema") 
+    """
+    LangGraph node: Extract data from search results and merge with existing data.
+    
+    Process:
+    1. Get existing data from state
+    2. Build map of existing products (for name consistency)
+    3. Extract new data from current search result
+    4. Merge with existing data (respecting limits)
+    5. Return updated data
+    """
+    schema = state.get("schema")
     results = state.get("results", []) or []
     iteration = state.get("iteration", 0)
     existing_data = state.get("data", {})
     max_competitors = state.get("max_competitors", 5)
-    max_products = state.get("max_products_per_company", 3)
+    max_products = state.get("max_products_per_company", 1)
     
     if not results:
         return {"data": schema}
     
-    # Use ONLY the first Tavily result this iteration (single-page loop)
-    MAX_CHARS_PER_RESULT = 8000
-    urls: List[str] = []
-    if results:
-        r0 = results[0]
-        text = r0.get("raw_content") or r0.get("content") or ""
-        url = r0.get("url", "")
-        urls.append(url)
-        if len(text) > MAX_CHARS_PER_RESULT:
-            text = text[:MAX_CHARS_PER_RESULT]
-        raw_bundle = f"SOURCE: {url}\n{text}"
-    else:
-        raw_bundle = ""
+    # Build map of existing products: {"Wika": ["A-10"], "Micro Sensor": ["MPM281 Series"], ...}
+    existing_products = {}
+    if existing_data and existing_data.get("Relationships"):
+        for rel in existing_data.get("Relationships", []):
+            if rel.get("relationship") == "OFFERS_PRODUCT":
+                company = rel.get("source", "")
+                product = rel.get("target", "")
+                if company and product:
+                    if company not in existing_products:
+                        existing_products[company] = []
+                    if product not in existing_products[company]:
+                        existing_products[company].append(product)
     
-    print(f"[llm] Iteration {iteration}, bundle: {len(raw_bundle)} chars")
+    # Process first search result (we get 1 URL per iteration)
+    result = results[0]
+    text = result.get("raw_content") or result.get("content") or ""
+    url = result.get("url", "")
+    
+    # Limit text size for LLM context
+    if len(text) > 8000:
+        text = text[:8000]
+    
+    text_with_url = f"SOURCE: {url}\n{text}"
+    
+    print(f"[llm] Iteration {iteration}")
+    if existing_products:
+        print(f"[llm] Existing products: {existing_products}")
     
     # Extract new data
-    new_data = extract_with_schema(schema, raw_bundle, urls[0] if urls else "")
+    new_data = extract_with_schema(schema, text_with_url, url, existing_products)
     
-    # Simple Python merge
+    # Merge with existing data
     if iteration > 0 and existing_data and existing_data.get("Relationships"):
-        data = _merge_data(existing_data, new_data, max_competitors, max_products)
+        merged = _merge_data(existing_data, new_data, max_competitors, max_products)
     else:
-        data = new_data
+        merged = new_data
     
-    # Accumulate URLs
+    # Accumulate source URLs
     existing_urls = existing_data.get("Doc", {}).get("source_url", []) if existing_data else []
     if isinstance(existing_urls, str):
         existing_urls = [existing_urls]
-    all_urls = list(dict.fromkeys(list(existing_urls) + urls))
-    data["Doc"] = {"source_url": all_urls}
+    all_urls = list(dict.fromkeys(list(existing_urls) + [url]))  # Remove duplicates
+    merged["Doc"] = {"source_url": all_urls}
     
-    return {"data": data}
+    return {"data": merged}
 
 
 def _merge_data(existing: Dict[str, Any], new: Dict[str, Any], max_competitors: int, max_products: int) -> Dict[str, Any]:
-    """Simple Python merge - keep existing, add new up to limits."""
+    """
+    Merge new extractions with existing data, respecting configured limits.
     
-    # Start with existing relationships
-    existing_rels = existing.get("Relationships", [])
+    Limits:
+    - Max 5 competitors (COMPETES_WITH)
+    - Max 1 product per competitor (OFFERS_PRODUCT)
+    - Max 1 price per product (HAS_PRICE)
+    
+    Strategy: Keep existing data, add new data only if under limits.
+    """
+    existing_rels = list(existing.get("Relationships", []))  # Make a copy
     new_rels = new.get("Relationships", [])
     
-    # Track what we have
-    competes_with = []
-    offers_product = {}
+    # Track what we already have
+    competitors = set()  # Use set for faster lookup
+    products_by_company = {}
+    prices_by_product = {}
     
+    # Build tracking from existing relationships
     for rel in existing_rels:
-        if rel.get("relationship") == "COMPETES_WITH":
-            target = rel.get("target", "")
-            if target and target not in competes_with:
-                competes_with.append(target)
-        elif rel.get("relationship") == "OFFERS_PRODUCT":
-            source = rel.get("source", "")
-            target = rel.get("target", "")
-            if source not in offers_product:
-                offers_product[source] = []
-            if target and target not in offers_product[source]:
-                offers_product[source].append(target)
+        rel_type = rel.get("relationship")
+        source = rel.get("source", "")
+        target = rel.get("target", "")
+        
+        if rel_type == "COMPETES_WITH":
+            if target:
+                competitors.add(target)
+        elif rel_type == "OFFERS_PRODUCT":
+            if source:
+                if source not in products_by_company:
+                    products_by_company[source] = set()
+                if target:
+                    products_by_company[source].add(target)
+        elif rel_type == "HAS_PRICE":
+            if source and target:
+                prices_by_product[source] = target
     
-    # Add new relationships up to limits
+    # Add new relationships if under limits
     for rel in new_rels:
-        if rel.get("relationship") == "COMPETES_WITH":
-            target = rel.get("target", "")
-            if target and target not in competes_with and len(competes_with) < max_competitors:
-                competes_with.append(target)
+        rel_type = rel.get("relationship")
+        source = rel.get("source", "")
+        target = rel.get("target", "")
+        
+        # Add new competitor
+        if rel_type == "COMPETES_WITH":
+            if target and target not in competitors and len(competitors) < max_competitors:
+                competitors.add(target)
                 existing_rels.append(rel)
-        elif rel.get("relationship") == "OFFERS_PRODUCT":
-            source = rel.get("source", "")
-            target = rel.get("target", "")
-            
-            # Skip placeholder/invalid product names
-            if not target or target in ["ModelName", "model", "N/A", "", "Unknown"]:
+        
+        # Add new product
+        elif rel_type == "OFFERS_PRODUCT":
+            # Must have valid source and target
+            if not source or not target:
+                continue
+            # Skip placeholder names
+            if target in ["ModelName", "model", "N/A", "", "Unknown"]:
                 continue
             
-            if source not in offers_product:
-                offers_product[source] = []
-            if target and target not in offers_product[source] and len(offers_product[source]) < max_products:
-                offers_product[source].append(target)
+            # Initialize company if new
+            if source not in products_by_company:
+                products_by_company[source] = set()
+            
+            # Add if under limit
+            if target not in products_by_company[source] and len(products_by_company[source]) < max_products:
+                products_by_company[source].add(target)
+                existing_rels.append(rel)
+        
+        # Add new price
+        elif rel_type == "HAS_PRICE":
+            # Must have valid target
+            if not target or target in ["N/A", "", "Unknown", "Price"]:
+                continue
+            
+            # Add if we don't have a price for this product yet
+            if source and source not in prices_by_product:
+                prices_by_product[source] = target
                 existing_rels.append(rel)
     
-    # Return merged data
-    result = {**existing}
+    # Return merged result
+    result = dict(existing)
     result["Relationships"] = existing_rels
     return result

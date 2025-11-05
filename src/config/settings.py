@@ -1,13 +1,24 @@
+"""
+Configuration module for the competitive intelligence pipeline.
+
+Loads API keys and database credentials from environment variables (.env file).
+Required environment variables:
+    - OPENAI_API_KEY: OpenAI API key for GPT-4o-mini
+    - TAVILY_API_KEY: Tavily API key for web search
+    - NEO4J_URI: Neo4j database URI (e.g., bolt://localhost:7687)
+    - NEO4J_USER: Neo4j username (usually 'neo4j')
+    - NEO4J_PASSWORD: Neo4j password
+"""
+
 import os
 from dotenv import load_dotenv
 
-
-# Load environment variables from a local .env if present
+# Load environment variables from .env file in project root
 load_dotenv()
 
 
-# ----- Tavily API -----
 def get_tavily_api_key() -> str:
+    """Get Tavily API key for web search functionality."""
     api_key = os.getenv("TAVILY_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError(
@@ -16,21 +27,8 @@ def get_tavily_api_key() -> str:
     return api_key
 
 
-# ----- Chunking defaults -----
-def get_chunk_params() -> dict:
-    """Return chunker parameters with safe defaults.
-
-    You can override via env:
-      - CHUNK_SIZE (characters)
-      - CHUNK_OVERLAP (characters)
-    """
-    size = int(os.getenv("CHUNK_SIZE", "3000"))
-    overlap = int(os.getenv("CHUNK_OVERLAP", "300"))
-    return {"chunk_size": size, "chunk_overlap": overlap}
-
-
-# ----- OpenAI API -----
 def get_openai_api_key() -> str:
+    """Get OpenAI API key for LLM-based data extraction."""
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key:
         raise RuntimeError(
@@ -39,8 +37,8 @@ def get_openai_api_key() -> str:
     return key
 
 
-# ----- Neo4j -----
 def get_neo4j_config() -> dict:
+    """Get Neo4j database connection configuration."""
     return {
         "uri": os.getenv("NEO4J_URI", ""),
         "user": os.getenv("NEO4J_USER", ""),

@@ -1,18 +1,21 @@
 {
-    "Industry": "",
-    "CustomerSegment": "",
-    "CustomerNeed": [],
-    "HoneywellProduct": "",
-    "Competitor": "",
-    "CompetitiveProduct": "",
-    "Relationships": [
-      { "source_type": "", 
-      "source": "", 
-      "relationship": 
-      "OFFERS_PRODUCT|COMPETES_WITH", 
-      "target_type": "", 
-      "target": "" }
-    ],
-    "Doc": { "source_url": "" },
-    "Flags": { "is_honeywell_product": false, "manufacturer": "" }
-  }
+  "Industry": "",
+  "CustomerSegment": "",
+  "CustomerNeed": [],
+  "HoneywellProduct": "",
+  "Competitor": "",
+  "CompetitiveProduct": "",
+  "Relationships": [
+    {
+      "source_type": "Company|Product",
+      "source": "entity name",
+      "relationship": "COMPETES_WITH|OFFERS_PRODUCT|HAS_PRICE",
+      "target_type": "Company|Product|Price",
+      "target": "entity name"
+    }
+  ],
+  "Doc": {
+    "source_url": ""
+  },
+  "Flags": {}
+}
