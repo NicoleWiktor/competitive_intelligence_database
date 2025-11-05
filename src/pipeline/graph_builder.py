@@ -1,7 +1,20 @@
+"""
+Graph Builder - Main pipeline orchestration using LangGraph.
+
+This module defines the competitive intelligence extraction pipeline:
+    START → search → extract → llm → refine → [decision]
+              ↑                                   ↓
+              └──────────── loop ─────────────────┘
+                                                 ↓
+                                               write
+
+The pipeline iteratively searches the web, extracts data, and refines queries
+until it collects: Honeywell → COMPETES_WITH → OFFERS_PRODUCT → HAS_PRICE
+"""
+
 from __future__ import annotations
 
 import json
-import operator
 from typing import Annotated, Any, Dict, List, TypedDict
 from pathlib import Path
 
@@ -15,97 +28,125 @@ from src.pipeline.refine_query_node import refine_query_node
 
 
 class PipelineState(TypedDict, total=False):
+    """
+    Shared state that flows through all nodes in the LangGraph pipeline.
+    
+    Fields:
+    - query: Current search query (changes each iteration)
+    - original_query: Initial query (stays constant)
+    - max_results: Number of URLs to fetch per search (default: 1)
+    - schema: JSON schema defining extraction structure
+    - results: Search results from current iteration (replaced each time)
+    - data: Accumulated extracted data (merged across iterations)
+    - needs_refinement: Boolean - continue iterating or stop
+    - iteration: Current iteration counter
+    - max_iterations: Safety limit to prevent infinite loops
+    - max_competitors: Max number of competitors to collect (default: 5)
+    - max_products_per_company: Max products per competitor (default: 1)
+    - phase_attempts: Track attempts per phase {"competitors": 0, "products": {}, "prices": {}}
+    """
     query: str
     original_query: str
     max_results: int
     schema: Dict[str, Any]
-    # Results list gets replaced each iteration (new search results)
     results: List[Dict[str, Any]]
-    # Data dict gets merged/accumulated across iterations
     data: Dict[str, Any]
     needs_refinement: bool
     iteration: int
     max_iterations: int
-    max_products_per_company: int  # Limit products per competitor
-    max_competitors: int  # Limit number of competitors to track
-    competitor_search_attempts: Dict[str, int]  # Track search attempts per competitor
-
-    
+    max_products_per_company: int
+    max_competitors: int
+    phase_attempts: Dict[str, Any]
 
 
 def should_continue(state: PipelineState) -> str:
     """
-    LangGraph conditional edge: Decide whether to continue refining or write to Neo4j.
-    This runs AFTER refine_query_node has analyzed the data.
+    Decision function: Determine next step after refine node.
+    
+    The refine node sets needs_refinement based on whether more data is needed.
     
     Returns:
-        "search" if more data is needed (loop back to search)
-        "write" if data is complete (proceed to Neo4j)
+        "search" - Loop back to search for more data
+        "write" - All data collected, proceed to Neo4j write
     """
     if state.get("needs_refinement", False):
-        return "search"
+        return "search"  # Continue iteration
     else:
-        return "write"
+        return "write"  # Done - write to database
 
 
 def build_graph() -> Any:
     """
-    Build the LangGraph pipeline with iterative query refinement.
+    Build and compile the LangGraph pipeline.
     
-    Graph Flow:
-        START -> search -> extract -> llm -> refine -> [conditional]
-                                                        ├─> search (loop)
-                                                        └─> write (terminal)
+    Graph structure:
+    1. search: Query web using Tavily API
+    2. extract: Get full page content from URLs
+    3. llm: Extract structured data using GPT-4o-mini
+    4. refine: Analyze what's missing and generate next query
+    5. Decision: Loop back to search OR proceed to write
+    6. write: Save to Neo4j database (terminal node)
     
-    State Updates (following LangGraph conventions):
-        - search_node: updates 'results'
-        - extract_node: updates 'results' (enriched with raw_content)
-        - llm_state_node: updates 'data'
-        - refine_query_node: updates 'query', 'needs_refinement', 'iteration'
-        - write_node: no updates (terminal node)
+    State updates by node:
+    - search: Updates 'results' (new search results)
+    - extract: Updates 'results' (enriched with raw_content)
+    - llm: Updates 'data' (merged extractions)
+    - refine: Updates 'query', 'needs_refinement', 'iteration', 'phase_attempts'
+    - write: No updates (terminal)
     """
-    g = StateGraph(PipelineState)
+    graph = StateGraph(PipelineState)
     
-    # Add all nodes
-    g.add_node("search", search_node)
-    g.add_node("extract", extract_node)
-    g.add_node("llm", llm_state_node)
-    g.add_node("refine", refine_query_node)
-    g.add_node("write", write_node)
+    # Add nodes to graph
+    graph.add_node("search", search_node)
+    graph.add_node("extract", extract_node)
+    graph.add_node("llm", llm_state_node)
+    graph.add_node("refine", refine_query_node)
+    graph.add_node("write", write_node)
     
-    # Linear flow: START -> search -> extract -> llm -> refine
-    g.add_edge(START, "search")
-    g.add_edge("search", "extract")
-    g.add_edge("extract", "llm")
-    g.add_edge("llm", "refine")
+    # Define linear flow through nodes
+    graph.add_edge(START, "search")
+    graph.add_edge("search", "extract")
+    graph.add_edge("extract", "llm")
+    graph.add_edge("llm", "refine")
     
-    # Conditional: after refine analyzes data, either loop back or write
-    g.add_conditional_edges(
+    # Add conditional branch after refine
+    graph.add_conditional_edges(
         "refine",
         should_continue,
-        {"search": "search", "write": "write"}
+        {
+            "search": "search",  # Loop back
+            "write": "write"     # Exit to database
+        }
     )
     
-    return g.compile()
-
-
+    return graph.compile()
 
 
 if __name__ == "__main__":
-    app = build_graph()
-    # Put your Tavily query here:
-    QUERY = "pressure transmitters in process industries with customer reviews and brands"
-    # Limit results to avoid context overflow (each result can be large)
-    # Process ONE Tavily page per iteration for tighter control
-    MAX_RESULTS = 1
-    MAX_ITERATIONS = 18  # Max number of query refinement loops (Phase 1: ~2, Phase 2: ~15 for 5 competitors × 3 attempts)
-    MAX_COMPETITORS = 5  # Focus on top 5 competitors only
-    MAX_PRODUCTS_PER_COMPANY = 3  # Limit products per competitor to avoid clutter
+    """
+    Main execution: Configure and run the pipeline.
     
-    # Load schema from file
+    Configuration:
+    - QUERY: Broad initial search query
+    - MAX_RESULTS: URLs per search (1 = process one page at a time)
+    - MAX_ITERATIONS: Safety limit (Phase 1: 8 + Phase 2: 5×7 + Phase 3: 5×7 ≈ 80)
+    - MAX_COMPETITORS: Focus on top 5 competitors
+    - MAX_PRODUCTS_PER_COMPANY: 1 product each
+    """
+    app = build_graph()
+    
+    # Configuration
+    QUERY = "pressure transmitters in process industries with customer reviews and brands"
+    MAX_RESULTS = 1  # Process 1 URL per iteration for control
+    MAX_ITERATIONS = 80  # Sufficient for all 3 phases
+    MAX_COMPETITORS = 5  # Top 5 competitors
+    MAX_PRODUCTS_PER_COMPANY = 1  # 1 product each
+    
+    # Load schema
     schema_path = Path("src/schemas/schema.json")
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     
+    # Initialize state
     state: PipelineState = {
         "query": QUERY,
         "original_query": QUERY,
@@ -115,13 +156,23 @@ if __name__ == "__main__":
         "max_iterations": MAX_ITERATIONS,
         "max_competitors": MAX_COMPETITORS,
         "max_products_per_company": MAX_PRODUCTS_PER_COMPANY,
-        "competitor_search_attempts": {},  # Track attempts per competitor
+        "phase_attempts": {
+            "competitors": 0,
+            "products": {},  # Per-competitor tracking
+            "prices": {}     # Per-product tracking
+        },
     }
     
-    # Set recursion limit: each iteration = 4 nodes (search, extract, llm, refine)
-    # With 18 max iterations: 4 * 18 = 72, set to 80 for safety
-    out = app.invoke(state, {"recursion_limit": 80})
-    print("\n" + "="*80)
-    print("FINAL EXTRACTED DATA:")
+    # Run pipeline
+    # Recursion limit: 4 nodes per iteration × 80 iterations = 320, set to 350 for safety
     print("="*80)
-    print(json.dumps(out.get("data", {}), indent=2))
+    print("STARTING COMPETITIVE INTELLIGENCE PIPELINE")
+    print("="*80)
+    
+    result = app.invoke(state, {"recursion_limit": 350})
+    
+    # Print final results
+    print("\n" + "="*80)
+    print("FINAL EXTRACTED DATA")
+    print("="*80)
+    print(json.dumps(result.get("data", {}), indent=2))
