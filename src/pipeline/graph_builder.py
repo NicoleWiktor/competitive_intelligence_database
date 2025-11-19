@@ -9,7 +9,7 @@ This module defines the competitive intelligence extraction pipeline:
                                                write
 
 The pipeline iteratively searches the web, extracts data, and refines queries
-until it collects: Honeywell → COMPETES_WITH → OFFERS_PRODUCT → HAS_PRICE
+until it collects: Honeywell → COMPETES_WITH → OFFERS_PRODUCT → HAS_PRICE → HAS_SPECIFICATION
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     Configuration:
     - QUERY: Broad initial search query
     - MAX_RESULTS: URLs per search (1 = process one page at a time)
-    - MAX_ITERATIONS: Safety limit (Phase 1: 8 + Phase 2: 5×7 + Phase 3: 5×7 ≈ 80)
+    - MAX_ITERATIONS: Safety limit (Phase 1: 8 + Phase 2: 5×7 + Phase 3: 5×7 + Phase 4: 5×5 ≈ 105)
     - MAX_COMPETITORS: Focus on top 5 competitors
     - MAX_PRODUCTS_PER_COMPANY: 1 product each
     """
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     # Configuration
     QUERY = "pressure transmitters in process industries with customer reviews and brands"
     MAX_RESULTS = 1  # Process 1 URL per iteration for control
-    MAX_ITERATIONS = 80  # Sufficient for all 3 phases
+    MAX_ITERATIONS = 110  # Sufficient for all 4 phases
     MAX_COMPETITORS = 5  # Top 5 competitors
     MAX_PRODUCTS_PER_COMPANY = 1  # 1 product each
     
@@ -159,17 +159,18 @@ if __name__ == "__main__":
         "phase_attempts": {
             "competitors": 0,
             "products": {},  # Per-competitor tracking
-            "prices": {}     # Per-product tracking
+            "prices": {},    # Per-product tracking
+            "specs": {}      # Per-product tracking (Phase 4)
         },
     }
     
     # Run pipeline
-    # Recursion limit: 4 nodes per iteration × 80 iterations = 320, set to 350 for safety
+    # Recursion limit: 4 nodes per iteration × 110 iterations = 440, set to 500 for safety
     print("="*80)
-    print("STARTING COMPETITIVE INTELLIGENCE PIPELINE")
+    print("STARTING COMPETITIVE INTELLIGENCE PIPELINE (4 PHASES)")
     print("="*80)
     
-    result = app.invoke(state, {"recursion_limit": 350})
+    result = app.invoke(state, {"recursion_limit": 500})
     
     # Print final results
     print("\n" + "="*80)

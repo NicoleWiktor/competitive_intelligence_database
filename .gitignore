@@ -21,3 +21,7 @@ venv/
 *.log
 *.pid
 SYSTEM_EXPLANATION.md
+
+# ChromaDB
+chroma_db/
+EVIDENCE_TRACKING.md

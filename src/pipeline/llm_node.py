@@ -79,29 +79,41 @@ def _build_prompt(text: str, schema: Dict[str, Any], existing_products: dict = N
         + product_context
         + "SCHEMA:\n" + json.dumps(schema, indent=2) + "\n\n"
         
-        + "RULES:\n"
+        + "EXTRACTION RULES:\n\n"
+        
         + "1. COMPETES_WITH: Honeywell → Competitor Company Name\n"
-        + "   Example: {source:'Honeywell', relationship:'COMPETES_WITH', target:'Wika'}\n\n"
+        + "   Example: {source:'Honeywell', source_type:'Company', relationship:'COMPETES_WITH', target:'Wika', target_type:'Company'}\n"
+        + "   - Extract ALL competitors mentioned in the text (up to 5 maximum)\n"
+        + "   - Use full company names: 'Endress+Hauser' not 'E+H'\n\n"
         
         + "2. OFFERS_PRODUCT: Company → Specific Product Model\n"
-        + "   Example: {source:'Wika', relationship:'OFFERS_PRODUCT', target:'A-10'}\n"
-        + "   - Extract specific model numbers (A-10, PMP21, MPM281 Series, etc.)\n"
-        + "   - NOT generic terms like 'pressure transmitter'\n\n"
+        + "   Example: {source:'Wika', source_type:'Company', relationship:'OFFERS_PRODUCT', target:'A-10', target_type:'Product'}\n"
+        + "   - Extract specific model names/numbers (e.g., A-10, PMP21, Rosemount 3051, MPM281)\n"
+        + "   - DO NOT use generic terms like 'pressure transmitter' or 'sensor'\n"
+        + "   - If a product has a company prefix (e.g., 'Rosemount 3051'), that company owns it\n"
+        + "   - If the page is clearly about one company's products, associate products with that company\n\n"
         
-        + "3. HAS_PRICE: Product → Price\n"
-        + "   Example: {source:'A-10', relationship:'HAS_PRICE', target:'$161.09'}\n"
-        + "   - Use EXACT product name from OFFERS_PRODUCT\n"
-        + "   - Only include prices with currency symbols ($, £, €, ¥)\n\n"
+        + "3. HAS_PRICE: Product → Price with Currency Symbol\n"
+        + "   Example: {source:'A-10', source_type:'Product', relationship:'HAS_PRICE', target:'$161.09', target_type:'Price'}\n"
+        + "   - Use the EXACT SAME product name from OFFERS_PRODUCT\n"
+        + "   - Only extract prices you can SEE in the text with currency symbols ($, £, €, ¥)\n"
+        + "   - DO NOT make up or guess prices\n\n"
         
-        + "CRITICAL REQUIREMENTS:\n"
-        + "- Extract ALL competitors in the text (up to 5 maximum)\n"
-        + "- Use full company names (Endress+Hauser not E+H)\n"
-        + "- Product names must be IDENTICAL in OFFERS_PRODUCT and HAS_PRICE\n"
-        + "- ONLY extract data that's VISIBLE in this text - no guessing or memory\n"
-        + "- For prices: must see currency symbol + number in the text\n\n"
+        + "4. HAS_SPECIFICATION: Product → Specifications String\n"
+        + "   Example: {source:'A-10', source_type:'Product', relationship:'HAS_SPECIFICATION', target:'Range: 0-6000 psi, Accuracy: ±0.075%, Output: 4-20mA', target_type:'Specification'}\n"
+        + "   - Use the EXACT SAME product name from OFFERS_PRODUCT\n"
+        + "   - Extract technical specifications: pressure range, accuracy, output signal, material, temperature range, connection type\n"
+        + "   - Combine multiple specs into a single concise string (max 200 chars)\n"
+        + "   - Only extract specs you can SEE in the text - no guessing\n\n"
+        
+        + "IMPORTANT:\n"
+        + "- ONLY extract data visible in this text - no hallucinations\n"
+        + "- For OFFERS_PRODUCT: Look for product model names associated with companies\n"
+        + "- For HAS_PRICE: Price must be explicitly shown in the text\n"
+        + "- Use consistent naming: same product name in OFFERS_PRODUCT and HAS_PRICE\n\n"
         
         + "TEXT:\n" + text[:5000] + "\n\n"
-        + "Return valid JSON with the schema structure."
+        + "Return valid JSON with the extracted relationships."
     )
 
 
@@ -157,7 +169,7 @@ def _coerce_to_json(text: str) -> Dict[str, Any]:
     return {"Relationships": []}
 
 
-def extract_with_schema(schema: Dict[str, Any], raw_content: str, source_url: str, existing_products: dict = None) -> Dict[str, Any]:
+def extract_with_schema(schema: Dict[str, Any], raw_content: str, source_url: str, chunk_ids: List[str] = None, existing_products: dict = None) -> Dict[str, Any]:
     """
     Use LLM to extract structured data from raw content.
     
@@ -166,7 +178,7 @@ def extract_with_schema(schema: Dict[str, Any], raw_content: str, source_url: st
     2. Call GPT-4o-mini for extraction
     3. Validate HAS_PRICE relationships (check price exists in source)
     4. Normalize company names
-    5. Tag each relationship with its source URL
+    5. Tag each relationship with source URL and evidence_id (ChromaDB chunk IDs)
     """
     llm = ChatOpenAI(
         api_key=get_openai_api_key(),
@@ -178,6 +190,7 @@ def extract_with_schema(schema: Dict[str, Any], raw_content: str, source_url: st
     
     print(f"[llm] Analyzing: {source_url}")
     print(f"[llm] Content: {len(raw_content)} chars")
+    print(f"[llm] Evidence chunks: {len(chunk_ids or [])}")
     
     # Call LLM
     response = llm.invoke(prompt)
@@ -207,13 +220,15 @@ def extract_with_schema(schema: Dict[str, Any], raw_content: str, source_url: st
             if price_numbers and price_numbers in raw_content:
                 print(f"[llm] ✅ Validated price '{price}' found in source")
                 rel["source_url"] = source_url
+                rel["evidence_ids"] = chunk_ids or []  # Link to ChromaDB chunks
                 validated_rels.append(rel)
             else:
                 print(f"[llm] ❌ Rejected price '{price}' - not found in source")
                 continue  # Skip this hallucinated price
         else:
-            # Tag with source and accept
+            # Tag with source and evidence
             rel["source_url"] = source_url
+            rel["evidence_ids"] = chunk_ids or []  # Link to ChromaDB chunks
             validated_rels.append(rel)
     
     # Wrap in schema structure
@@ -268,6 +283,7 @@ def llm_state_node(state: Dict[str, Any]) -> Dict[str, Any]:
     result = results[0]
     text = result.get("raw_content") or result.get("content") or ""
     url = result.get("url", "")
+    chunk_ids = result.get("chunk_ids", [])  # Get ChromaDB chunk IDs for evidence linking
     
     # Limit text size for LLM context
     if len(text) > 8000:
@@ -279,8 +295,8 @@ def llm_state_node(state: Dict[str, Any]) -> Dict[str, Any]:
     if existing_products:
         print(f"[llm] Existing products: {existing_products}")
     
-    # Extract new data
-    new_data = extract_with_schema(schema, text_with_url, url, existing_products)
+    # Extract new data with evidence linking
+    new_data = extract_with_schema(schema, text_with_url, url, chunk_ids, existing_products)
     
     # Merge with existing data
     if iteration > 0 and existing_data and existing_data.get("Relationships"):
@@ -306,6 +322,7 @@ def _merge_data(existing: Dict[str, Any], new: Dict[str, Any], max_competitors: 
     - Max 5 competitors (COMPETES_WITH)
     - Max 1 product per competitor (OFFERS_PRODUCT)
     - Max 1 price per product (HAS_PRICE)
+    - Max 1 specification per product (HAS_SPECIFICATION)
     
     Strategy: Keep existing data, add new data only if under limits.
     """
@@ -316,6 +333,7 @@ def _merge_data(existing: Dict[str, Any], new: Dict[str, Any], max_competitors: 
     competitors = set()  # Use set for faster lookup
     products_by_company = {}
     prices_by_product = {}
+    specs_by_product = {}
     
     # Build tracking from existing relationships
     for rel in existing_rels:
@@ -335,6 +353,9 @@ def _merge_data(existing: Dict[str, Any], new: Dict[str, Any], max_competitors: 
         elif rel_type == "HAS_PRICE":
             if source and target:
                 prices_by_product[source] = target
+        elif rel_type == "HAS_SPECIFICATION":
+            if source and target:
+                specs_by_product[source] = target
     
     # Add new relationships if under limits
     for rel in new_rels:
@@ -375,6 +396,17 @@ def _merge_data(existing: Dict[str, Any], new: Dict[str, Any], max_competitors: 
             # Add if we don't have a price for this product yet
             if source and source not in prices_by_product:
                 prices_by_product[source] = target
+                existing_rels.append(rel)
+        
+        # Add new specification
+        elif rel_type == "HAS_SPECIFICATION":
+            # Must have valid target
+            if not target or target in ["N/A", "", "Unknown"]:
+                continue
+            
+            # Add if we don't have specs for this product yet
+            if source and source not in specs_by_product:
+                specs_by_product[source] = target
                 existing_rels.append(rel)
     
     # Return merged result

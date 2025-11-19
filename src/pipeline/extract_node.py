@@ -1,13 +1,15 @@
 """
-Extract Node - Enriches search results with full page content.
+Extract Node - Enriches search results with full page content and stores in ChromaDB.
 
-This node attempts to extract the full raw HTML content from URLs found
-by the search node. If extraction fails (timeouts, errors), it falls back
-to using the basic content snippet provided by Tavily search.
+This node:
+1. Extracts full raw HTML content from URLs (with fallback to basic content)
+2. Chunks the content using RecursiveCharacterTextSplitter
+3. Stores chunks in ChromaDB with metadata
+4. Attaches chunk IDs (evidence_ids) to results for Neo4j linking
 
 LangGraph Integration:
     Input: state["results"] - list of search results (may have partial content)
-    Output: state["results"] - same list enriched with raw_content field
+    Output: state["results"] - enriched with raw_content and chunk_ids fields
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from typing import Any, Dict, List
 
 from tavily import TavilyClient
 from src.config.settings import get_tavily_api_key
+from src.pipeline.chroma_store import chunk_and_store
 
 
 def get_tavily_client() -> TavilyClient:
@@ -43,17 +46,20 @@ def tavily_extract_from_urls(urls: List[str], extract_depth: str | None = None) 
 
 def extract_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    LangGraph node: Enrich search results with full page content.
+    LangGraph node: Enrich search results with full page content and store in ChromaDB.
     
     Strategy:
     1. Check which results lack raw_content
     2. Attempt to extract full HTML content using Tavily extract API
     3. If extraction fails (timeout, errors), use basic content from search
-    4. Print preview of content for debugging
+    4. Chunk content and store in ChromaDB
+    5. Attach chunk IDs (evidence_ids) to each result
+    6. Print preview of content for debugging
     
     Graceful degradation ensures pipeline continues even if extraction fails.
     """
     results: List[Dict[str, Any]] = state.get("results", [])
+    query = state.get("query", "")
     missing = [r for r in results if not r.get("raw_content")]
     
     if missing:
@@ -81,6 +87,24 @@ def extract_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 if not r.get("raw_content") and r.get("content"):
                     r["raw_content"] = r["content"]
     
+    # Chunk and store in ChromaDB
+    for r in results:
+        raw_content = r.get("raw_content") or r.get("content") or ""
+        if raw_content:
+            url = r.get("url", "")
+            title = r.get("title", "")
+            
+            # Chunk and store, get back chunk IDs
+            chunk_ids = chunk_and_store(
+                raw_content=raw_content,
+                source_url=url,
+                query=query,
+                page_title=title
+            )
+            
+            # Attach chunk IDs to result
+            r["chunk_ids"] = chunk_ids
+    
     # Debug: Show how many results have content
     with_content = sum(1 for r in results if r.get("raw_content"))
     print(f"[extract_node] {with_content}/{len(results)} results have content")
@@ -89,7 +113,9 @@ def extract_node(state: Dict[str, Any]) -> Dict[str, Any]:
     for i, r in enumerate(results[:2]):  # Show first 2 results
         url = r.get("url", "")
         raw = r.get("raw_content") or r.get("content") or ""
+        chunk_count = len(r.get("chunk_ids", []))
         print(f"\n[extract_node] Result {i+1}: {url}")
+        print(f"Chunks stored: {chunk_count}")
         if raw:
             print(f"Content preview ({len(raw)} chars): {raw[:300]}...")
         else:
