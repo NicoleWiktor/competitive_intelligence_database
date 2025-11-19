@@ -1,10 +1,11 @@
 """
 Refine Query Node - Intelligently generates next search query based on missing data.
 
-This node implements a 3-phase approach:
+This node implements a 4-phase approach:
 Phase 1: Find 5 competitors (max 8 attempts)
 Phase 2: Find 1 product per competitor (max 7 attempts each)
 Phase 3: Find price for each product (max 7 attempts each)
+Phase 4: Find specifications for each product (max 5 attempts each)
 
 The node analyzes what data is missing and generates targeted queries to fill gaps.
 """
@@ -38,10 +39,10 @@ def refine_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
     data = state.get("data", {})
     original_query = state.get("original_query", "")
     iteration = state.get("iteration", 0)
-    max_iterations = state.get("max_iterations", 80)
+    max_iterations = state.get("max_iterations", 100)  # Increased for Phase 4
     max_competitors = state.get("max_competitors", 5)
     max_products_per_company = state.get("max_products_per_company", 1)
-    phase_attempts = state.get("phase_attempts", {"competitors": 0, "products": {}, "prices": {}})
+    phase_attempts = state.get("phase_attempts", {"competitors": 0, "products": {}, "prices": {}, "specs": {}})
     
     # Safety: Stop if max iterations reached
     if iteration >= max_iterations:
@@ -54,6 +55,7 @@ def refine_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
     competitors = set()  # Companies that compete with Honeywell
     products_by_competitor = {}  # {"Wika": ["A-10"], ...}
     prices_by_product = {}  # {"A-10": "$161.09", ...}
+    specs_by_product = {}  # {"A-10": "specifications string", ...}
     
     for rel in relationships:
         rel_type = rel.get("relationship", "")
@@ -69,14 +71,17 @@ def refine_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 products_by_competitor[source].append(target)
         elif rel_type == "HAS_PRICE":
             prices_by_product[source] = target
+        elif rel_type == "HAS_SPECIFICATION":
+            specs_by_product[source] = target
     
     # Print progress
     print(f"[refine] Iteration {iteration}: {len(competitors)} competitors, "
           f"{sum(len(p) for p in products_by_competitor.values())} products, "
-          f"{len(prices_by_product)} prices")
+          f"{len(prices_by_product)} prices, {len(specs_by_product)} specs")
     print(f"[refine] Competitors: {list(competitors)}")
     print(f"[refine] Products: {dict(products_by_competitor)}")
     print(f"[refine] Prices: {dict(prices_by_product)}")
+    print(f"[refine] Specifications: {dict(specs_by_product)}")
     
     llm = ChatOpenAI(
         api_key=get_openai_api_key(),
@@ -181,6 +186,55 @@ Return JSON: {{"query": "your search query here"}}"""
             result = json.loads(content)
             new_query = result.get("query", "")
             print(f"[refine] Phase 3 (Price for {target_product}, attempt {phase_attempts['prices'][target_product]}/7): {new_query}")
+            return {
+                "query": new_query,
+                "needs_refinement": True,
+                "iteration": iteration + 1,
+                "phase_attempts": phase_attempts,
+            }
+        except:
+            pass
+    
+    # PHASE 4: Find specifications for products (try up to 5 times per product)
+    products_needing_specs = [
+        prod for comp_prods in products_by_competitor.values()
+        for prod in comp_prods
+        if prod not in specs_by_product
+        and phase_attempts["specs"].get(prod, 0) < 5
+    ]
+    
+    if products_needing_specs:
+        target_product = products_needing_specs[0]
+        phase_attempts["specs"][target_product] = phase_attempts["specs"].get(target_product, 0) + 1
+        
+        # Find which company makes this product
+        product_company = None
+        for comp, prods in products_by_competitor.items():
+            if target_product in prods:
+                product_company = comp
+                break
+        
+        prompt = f"""Find detailed specifications for the "{target_product}" pressure transmitter made by {product_company}.
+
+Look for technical specifications like:
+- Pressure range (e.g., "0-6000 psi")
+- Accuracy (e.g., "±0.075%")
+- Output signal (e.g., "4-20 mA")
+- Material (e.g., "316 stainless steel")
+- Temperature range (e.g., "-40 to 85°C")
+- Process connection (e.g., "1/4 NPT")
+
+Attempt: {phase_attempts['specs'][target_product]}/5
+
+Generate a search query to find technical specifications.
+Return JSON: {{"query": "your search query here"}}"""
+        
+        response = llm.invoke(prompt)
+        content = getattr(response, "content", str(response))
+        try:
+            result = json.loads(content)
+            new_query = result.get("query", "")
+            print(f"[refine] Phase 4 (Specs for {target_product}, attempt {phase_attempts['specs'][target_product]}/5): {new_query}")
             return {
                 "query": new_query,
                 "needs_refinement": True,

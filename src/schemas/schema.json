@@ -7,10 +7,10 @@
   "CompetitiveProduct": "",
   "Relationships": [
     {
-      "source_type": "Company|Product",
+      "source_type": "Company|Product|Specification",
       "source": "entity name",
-      "relationship": "COMPETES_WITH|OFFERS_PRODUCT|HAS_PRICE",
-      "target_type": "Company|Product|Price",
+      "relationship": "COMPETES_WITH|OFFERS_PRODUCT|HAS_PRICE|HAS_SPECIFICATION",
+      "target_type": "Company|Product|Price|Specification",
       "target": "entity name"
     }
   ],
