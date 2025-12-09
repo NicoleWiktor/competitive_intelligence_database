@@ -1,15 +1,12 @@
 """
 Graph Builder - Main pipeline orchestration using LangGraph.
 
-This module defines the competitive intelligence extraction pipeline:
-    START → search → extract → llm → refine → [decision]
-              ↑                                   ↓
-              └──────────── loop ─────────────────┘
-                                                 ↓
-                                               write
+SUPPORTS TWO MODES:
+1. AGENTIC MODE (New!): Uses ReAct agent for autonomous decision-making
+2. PIPELINE MODE (Legacy): Uses fixed iteration pipeline
 
-The pipeline iteratively searches the web, extracts data, and refines queries
-until it collects: Honeywell → COMPETES_WITH → OFFERS_PRODUCT → HAS_PRICE → HAS_SPECIFICATION
+The agentic mode is the recommended approach for better results.
+The AI makes decisions about what to search, when to extract specs, and when to stop.
 """
 
 from __future__ import annotations
@@ -17,6 +14,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Dict, List, TypedDict
 from pathlib import Path
+import argparse
 
 from langgraph.graph import START, StateGraph
 
@@ -28,23 +26,7 @@ from src.pipeline.refine_query_node import refine_query_node
 
 
 class PipelineState(TypedDict, total=False):
-    """
-    Shared state that flows through all nodes in the LangGraph pipeline.
-    
-    Fields:
-    - query: Current search query (changes each iteration)
-    - original_query: Initial query (stays constant)
-    - max_results: Number of URLs to fetch per search (default: 1)
-    - schema: JSON schema defining extraction structure
-    - results: Search results from current iteration (replaced each time)
-    - data: Accumulated extracted data (merged across iterations)
-    - needs_refinement: Boolean - continue iterating or stop
-    - iteration: Current iteration counter
-    - max_iterations: Safety limit to prevent infinite loops
-    - max_competitors: Max number of competitors to collect (default: 5)
-    - max_products_per_company: Max products per competitor (default: 1)
-    - phase_attempts: Track attempts per phase {"competitors": 0, "products": {}, "prices": {}}
-    """
+    """Shared state for the LangGraph pipeline."""
     query: str
     original_query: str
     max_results: int
@@ -60,120 +42,227 @@ class PipelineState(TypedDict, total=False):
 
 
 def should_continue(state: PipelineState) -> str:
-    """
-    Decision function: Determine next step after refine node.
-    
-    The refine node sets needs_refinement based on whether more data is needed.
-    
-    Returns:
-        "search" - Loop back to search for more data
-        "write" - All data collected, proceed to Neo4j write
-    """
+    """Decision function for pipeline mode."""
     if state.get("needs_refinement", False):
-        return "search"  # Continue iteration
+        return "search"
     else:
-        return "write"  # Done - write to database
+        return "write"
 
 
 def build_graph() -> Any:
-    """
-    Build and compile the LangGraph pipeline.
-    
-    Graph structure:
-    1. search: Query web using Tavily API
-    2. extract: Get full page content from URLs
-    3. llm: Extract structured data using GPT-4o-mini
-    4. refine: Analyze what's missing and generate next query
-    5. Decision: Loop back to search OR proceed to write
-    6. write: Save to Neo4j database (terminal node)
-    
-    State updates by node:
-    - search: Updates 'results' (new search results)
-    - extract: Updates 'results' (enriched with raw_content)
-    - llm: Updates 'data' (merged extractions)
-    - refine: Updates 'query', 'needs_refinement', 'iteration', 'phase_attempts'
-    - write: No updates (terminal)
-    """
+    """Build the LangGraph pipeline for PIPELINE MODE."""
     graph = StateGraph(PipelineState)
     
-    # Add nodes to graph
     graph.add_node("search", search_node)
     graph.add_node("extract", extract_node)
     graph.add_node("llm", llm_state_node)
     graph.add_node("refine", refine_query_node)
     graph.add_node("write", write_node)
     
-    # Define linear flow through nodes
     graph.add_edge(START, "search")
     graph.add_edge("search", "extract")
     graph.add_edge("extract", "llm")
     graph.add_edge("llm", "refine")
     
-    # Add conditional branch after refine
     graph.add_conditional_edges(
         "refine",
         should_continue,
-        {
-            "search": "search",  # Loop back
-            "write": "write"     # Exit to database
-        }
+        {"search": "search", "write": "write"}
     )
     
     return graph.compile()
 
 
-if __name__ == "__main__":
+def run_pipeline_mode(
+    query: str = "pressure transmitters process industries competitors specifications",
+    max_results: int = 1,
+    max_iterations: int = 50,
+    max_competitors: int = 5,
+    max_products_per_company: int = 1,
+) -> Dict[str, Any]:
     """
-    Main execution: Configure and run the pipeline.
+    Run the traditional pipeline mode.
     
-    Configuration:
-    - QUERY: Broad initial search query
-    - MAX_RESULTS: URLs per search (1 = process one page at a time)
-    - MAX_ITERATIONS: Safety limit (Phase 1: 8 + Phase 2: 5×7 + Phase 3: 5×7 + Phase 4: 5×5 ≈ 105)
-    - MAX_COMPETITORS: Focus on top 5 competitors
-    - MAX_PRODUCTS_PER_COMPANY: 1 product each
+    This mode uses fixed phases to collect:
+    1. Competitors
+    2. Products
+    3. Prices
+    4. Specifications
     """
     app = build_graph()
     
-    # Configuration
-    QUERY = "pressure transmitters in process industries with customer reviews and brands"
-    MAX_RESULTS = 1  # Process 1 URL per iteration for control
-    MAX_ITERATIONS = 110  # Sufficient for all 4 phases
-    MAX_COMPETITORS = 5  # Top 5 competitors
-    MAX_PRODUCTS_PER_COMPANY = 1  # 1 product each
-    
-    # Load schema
     schema_path = Path("src/schemas/schema.json")
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     
-    # Initialize state
     state: PipelineState = {
-        "query": QUERY,
-        "original_query": QUERY,
-        "max_results": MAX_RESULTS,
+        "query": query,
+        "original_query": query,
+        "max_results": max_results,
         "schema": schema,
         "iteration": 0,
-        "max_iterations": MAX_ITERATIONS,
-        "max_competitors": MAX_COMPETITORS,
-        "max_products_per_company": MAX_PRODUCTS_PER_COMPANY,
+        "max_iterations": max_iterations,
+        "max_competitors": max_competitors,
+        "max_products_per_company": max_products_per_company,
         "phase_attempts": {
             "competitors": 0,
-            "products": {},  # Per-competitor tracking
-            "prices": {},    # Per-product tracking
-            "specs": {}      # Per-product tracking (Phase 4)
+            "products": {},
+            "prices": {},
+            "specs": {}
         },
     }
     
-    # Run pipeline
-    # Recursion limit: 4 nodes per iteration × 110 iterations = 440, set to 500 for safety
     print("="*80)
-    print("STARTING COMPETITIVE INTELLIGENCE PIPELINE (4 PHASES)")
+    print("STARTING PIPELINE MODE")
     print("="*80)
     
     result = app.invoke(state, {"recursion_limit": 500})
     
-    # Print final results
+    print("\n" + "="*80)
+    print("PIPELINE COMPLETE")
+    print("="*80)
+    
+    return result.get("data", {})
+
+
+def run_agentic_mode(
+    target_product: str = "SmartLine ST700",
+    target_company: str = "Honeywell",
+    max_competitors: int = 5,
+    max_iterations: int = 30,
+) -> Dict[str, Any]:
+    """
+    Run the AGENTIC mode using LangGraph agent pipeline.
+    
+    This is the RECOMMENDED mode for better results!
+    
+    The LangGraph agent:
+    - Uses tool nodes for actions (search, save, extract)
+    - Has conditional routing based on decisions
+    - Maintains state across the graph
+    - Makes autonomous decisions about what to do next
+    
+    Graph structure:
+        __start__ → agent → router → tools → agent (loop) → __end__
+    """
+    from src.agents.langgraph_agent import run_langgraph_agent
+    from src.pipeline.neo4j_write_node import run_neo4j
+    from src.pipeline.cypher_node import to_merge_cypher
+    
+    print("="*80)
+    print("🤖 STARTING LANGGRAPH AGENTIC MODE")
+    print(f"Target: {target_company} {target_product}")
+    print(f"Looking for {max_competitors} competitors")
+    print("="*80)
+    
+    # Reset Neo4j database before running
+    print("\n🗑️  Resetting Neo4j database...")
+    reset_neo4j()
+    print("✓ Database cleared\n")
+    
+    # Run the LangGraph agent
+    data = run_langgraph_agent(
+        max_iterations=max_iterations,
+        max_competitors=max_competitors,
+    )
+    
+    # Write to Neo4j
+    cypher = to_merge_cypher(data)
+    print("\n[neo4j] Writing agent results to database...")
+    run_neo4j(cypher)
+    
+    print("\n" + "="*80)
+    print("🏁 LANGGRAPH AGENTIC MODE COMPLETE")
+    print("="*80)
+    
+    return data
+
+
+def reset_neo4j():
+    """Clear all nodes and relationships from Neo4j database."""
+    from neo4j import GraphDatabase
+    from src.config.settings import get_neo4j_config
+    
+    cfg = get_neo4j_config()
+    uri = cfg.get("uri")
+    user = cfg.get("user")
+    password = cfg.get("password")
+    
+    if not (uri and user and password):
+        print("[neo4j] Neo4j credentials not set - skipping reset")
+        return
+    
+    driver = GraphDatabase.driver(uri, auth=(user, password))
+    try:
+        with driver.session() as session:
+            # Delete all nodes and relationships
+            session.run("MATCH (n) DETACH DELETE n")
+            print("[neo4j] All nodes and relationships deleted")
+    finally:
+        driver.close()
+
+
+def main():
+    """Main entry point with mode selection."""
+    parser = argparse.ArgumentParser(
+        description="Competitive Intelligence Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run in AGENTIC mode (recommended):
+  python -m src.pipeline.graph_builder --mode agentic
+
+  # Run in PIPELINE mode:
+  python -m src.pipeline.graph_builder --mode pipeline
+
+  # Custom parameters:
+  python -m src.pipeline.graph_builder --mode agentic --competitors 3 --iterations 20
+        """
+    )
+    
+    parser.add_argument(
+        "--mode", 
+        choices=["agentic", "pipeline"],
+        default="agentic",
+        help="Execution mode: 'agentic' (recommended) or 'pipeline'"
+    )
+    parser.add_argument(
+        "--competitors",
+        type=int,
+        default=5,
+        help="Number of competitors to find (default: 5)"
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=30,
+        help="Maximum iterations (default: 30 for agentic, 50 for pipeline)"
+    )
+    parser.add_argument(
+        "--product",
+        type=str,
+        default="SmartLine ST700",
+        help="Target Honeywell product (default: SmartLine ST700)"
+    )
+    
+    args = parser.parse_args()
+    
+    if args.mode == "agentic":
+        result = run_agentic_mode(
+            target_product=args.product,
+            max_competitors=args.competitors,
+            max_iterations=args.iterations,
+        )
+    else:
+        result = run_pipeline_mode(
+            max_competitors=args.competitors,
+            max_iterations=args.iterations,
+        )
+    
     print("\n" + "="*80)
     print("FINAL EXTRACTED DATA")
     print("="*80)
-    print(json.dumps(result.get("data", {}), indent=2))
+    print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,19 +1,34 @@
 {
-  "Industry": "",
+  "Industry": "process industries",
   "CustomerSegment": "",
   "CustomerNeed": [],
-  "HoneywellProduct": "",
+  "HoneywellProduct": "SmartLine ST700",
   "Competitor": "",
   "CompetitiveProduct": "",
   "Relationships": [
     {
-      "source_type": "Company|Product|Specification",
+      "source_type": "Company|Product",
       "source": "entity name",
-      "relationship": "COMPETES_WITH|OFFERS_PRODUCT|HAS_PRICE|HAS_SPECIFICATION",
+      "relationship": "COMPETES_WITH|OFFERS_PRODUCT|HAS_PRICE|HAS_SPEC",
       "target_type": "Company|Product|Price|Specification",
-      "target": "entity name"
+      "target": "entity name or spec value"
     }
   ],
+  "Specifications": {
+    "_description": "Structured specifications for pressure transmitters",
+    "pressure_range": {"value": "0-6000", "unit": "psi", "raw": "source text"},
+    "accuracy": {"value": 0.075, "unit": "percent_fs", "raw": "source text"},
+    "output_signal": {"value": ["4-20mA", "HART"], "raw": "source text"},
+    "process_connection": {"value": ["1/2 NPT"], "raw": "source text"},
+    "wetted_materials": {"value": ["316 SS"], "raw": "source text"},
+    "operating_temp": {"value": "-40 to 85", "unit": "celsius", "raw": "source text"},
+    "ip_rating": {"value": "IP67", "raw": "source text"},
+    "hazardous_area": {"value": ["ATEX", "IECEx"], "raw": "source text"},
+    "measurement_type": {"value": "Gauge", "raw": "source text"},
+    "supply_voltage": {"value": "10-30", "unit": "V DC", "raw": "source text"},
+    "response_time": {"value": 100, "unit": "ms", "raw": "source text"},
+    "stability": {"value": "±0.1% over 5 years", "raw": "source text"}
+  },
   "Doc": {
     "source_url": ""
   },

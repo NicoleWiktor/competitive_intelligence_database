@@ -169,3 +169,77 @@ def get_chunk_by_id(chunk_id: str) -> Dict[str, Any] | None:
     
     return None
 
+
+def find_best_evidence_for_relationship(
+    source: str, 
+    relationship: str, 
+    target: str,
+    evidence_ids: List[str] = None
+) -> Dict[str, Any] | None:
+    """
+    **Semantic search-based evidence retrieval** - Find the best supporting evidence.
+    
+    This automatically verifies data quality using ChromaDB's semantic search:
+    - Searches ChromaDB semantically for the relationship claim
+    - Returns the chunk that best supports the relationship
+    - Includes relevance score (distance) for quality assessment
+    
+    Args:
+        source: Source entity (e.g., "Wika")
+        relationship: Relationship type (e.g., "OFFERS_PRODUCT")
+        target: Target entity (e.g., "A-10")
+        evidence_ids: Optional - search only within these chunks
+    
+    Returns:
+        Best matching chunk with: document, metadata, distance, id
+        None if no good match found
+    """
+    # Build semantic query from the relationship
+    query = f"{source} {relationship.replace('_', ' ').lower()} {target}"
+    
+    collection = get_collection()
+    
+    # Strategy 1: If evidence_ids provided, search within those first
+    if evidence_ids:
+        try:
+            # Query with semantic search, but only return results from evidence_ids
+            all_results = collection.query(
+                query_texts=[query],
+                n_results=20,  # Get more results to filter
+                include=['documents', 'metadatas', 'distances']
+            )
+            
+            if all_results and all_results['ids']:
+                # Filter to only chunks in evidence_ids
+                for i, chunk_id in enumerate(all_results['ids'][0]):
+                    if chunk_id in evidence_ids:
+                        # Found a match in our evidence set
+                        return {
+                            "id": chunk_id,
+                            "document": all_results['documents'][0][i],
+                            "metadata": all_results['metadatas'][0][i],
+                            "distance": all_results['distances'][0][i]
+                        }
+        except Exception as e:
+            print(f"[chroma] Semantic search within evidence_ids failed: {e}")
+    
+    # Strategy 2: Search entire collection for best match
+    try:
+        results = collection.query(
+            query_texts=[query],
+            n_results=1,  # Just get the best match
+            include=['documents', 'metadatas', 'distances']
+        )
+        
+        if results and results['ids'] and results['ids'][0]:
+            return {
+                "id": results['ids'][0][0],
+                "document": results['documents'][0][0],
+                "metadata": results['metadatas'][0][0],
+                "distance": results['distances'][0][0]
+            }
+    except Exception as e:
+        print(f"[chroma] Semantic search failed: {e}")
+    
+    return None
+

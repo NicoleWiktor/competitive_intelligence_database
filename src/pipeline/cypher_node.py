@@ -1,48 +1,58 @@
 """
 Cypher Node - Converts extracted JSON data into Neo4j Cypher statements.
 
-This module transforms the structured data (companies, products, prices, relationships)
+This module transforms the structured data (companies, products, prices, SPECIFICATIONS)
 into Cypher MERGE statements that create the knowledge graph in Neo4j.
+
+ENHANCED FOR STRUCTURED SPECIFICATIONS:
+- Each specification is a separate node with: name, value, unit, normalized_value
+- Products connect to specs via HAS_SPEC relationship
+- Enables head-to-head comparison queries in Neo4j
 
 Each node and relationship stores:
 - source_urls (array): Which web pages mentioned this entity
 - evidence_ids (array): ChromaDB chunk IDs linking to raw source evidence
-
-This enables full traceability from graph relationships back to original source text.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Any
+import re
 
 
 def _esc(s: str) -> str:
     """Escape special characters for Cypher queries."""
-    return (s or "").replace("\\", "\\\\").replace("'", "\\'")
+    return (
+        (s or "")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace('"', '\\"')
+    )
+
+
+def _normalize_spec_name(name: str) -> str:
+    """Normalize specification names for consistent querying."""
+    # Convert to title case and clean up
+    name = name.replace("_", " ").title()
+    return name
 
 
 def to_merge_cypher(data: Dict) -> str:
     """
     Convert JSON data to Cypher MERGE statements for Neo4j.
     
-    Process:
-    1. Create constraints (ensure unique node names)
-    2. Create nodes (Company, Product, Price) with source_urls
-    3. Create relationships with source_urls + evidence_ids (ChromaDB chunk IDs)
+    ENHANCED: Now creates structured Specification nodes with:
+    - name: The specification type (e.g., "Pressure Range")
+    - value: The actual value (e.g., "0-6000 psi")
+    - spec_type: The ontology key (e.g., "pressure_range")
+    - unit: The unit if applicable (e.g., "psi")
     
-    Evidence Tracking:
-    - Each node has source_urls array (which pages mentioned it)
-    - Each relationship has:
-        - source_urls array (which pages mentioned the connection)
-        - evidence_ids array (ChromaDB chunk IDs for raw source verification)
-    - ON CREATE: Initialize with current values
-    - ON MATCH: Append if not already present
-    
-    Args:
-        data: Dictionary with Relationships and Doc keys
-        
-    Returns:
-        String of Cypher statements separated by semicolons
+    This enables queries like:
+    - "Compare accuracy across all products"
+    - "Find products with pressure range > 3000 psi"
+    - "Which products support HART protocol?"
     """
     if not data:
         return ""
@@ -55,113 +65,285 @@ def to_merge_cypher(data: Dict) -> str:
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Product) REQUIRE n.name IS UNIQUE;",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Price) REQUIRE n.name IS UNIQUE;",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Specification) REQUIRE n.name IS UNIQUE;",
+        "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Review) REQUIRE n.name IS UNIQUE;",
+        "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Review) REQUIRE n.name IS UNIQUE;",
     ])
     
     # Step 2: Extract source URL from data
     raw_url = (data.get("Doc") or {}).get("source_url") or ""
     if isinstance(raw_url, list):
-        doc_url = _esc(raw_url[-1] if raw_url else "")  # Use most recent URL
+        doc_url = _esc(raw_url[-1] if raw_url else "")
     else:
         doc_url = _esc(raw_url)
     
-    # Step 3: Process each relationship to create nodes and edges
-    for rel in data.get("Relationships", []) or []:
-        # Get relationship details
+    # Track created nodes to avoid duplicates
+    created_companies = set()
+    created_products = set()
+    created_specs = set()
+    
+    # Step 3: Process each relationship (handle both cases for compatibility)
+    relationships = data.get("relationships", []) or data.get("Relationships", []) or []
+    for rel in relationships:
         relationship_type = _esc((rel.get("relationship") or "").upper().replace(" ", "_"))
         source_label = rel.get("source_type") or "Company"
         target_label = rel.get("target_type") or "Product"
         source_name = _esc(rel.get("source") or "")
         target_name = _esc(rel.get("target") or "")
         
-        # Get specific source URL for this relationship (fallback to doc_url)
+        # Get source URL and evidence
         rel_url = _esc(rel.get("source_url") or doc_url)
-        
-        # Get evidence IDs (ChromaDB chunk IDs) for this relationship
         evidence_ids = rel.get("evidence_ids") or []
-        # Escape and format as Cypher list
         evidence_ids_str = "[" + ", ".join([f"'{_esc(eid)}'" for eid in evidence_ids]) + "]"
         
-        # Skip if missing required fields
         if not (source_name and target_name and relationship_type):
             continue
         
-        # Normalize label names to ONLY valid Neo4j labels: Company, Product, Price, Specification
-        # CRITICAL: Labels must be valid identifiers, NOT entity names
+        # Normalize labels
+        source_label = _normalize_label(source_label, relationship_type, is_source=True)
+        target_label = _normalize_label(target_label, relationship_type, is_source=False)
         
-        # Normalize source label
-        if source_label in ("Company", "Brand"):
-            source_label = "Company"
-        elif source_label == "Product":
-            source_label = "Product"
-        elif source_label == "Price":
-            source_label = "Price"
-        elif source_label == "Specification":
-            source_label = "Specification"
-        else:
-            # Invalid or missing label - infer from relationship type
-            if relationship_type == "COMPETES_WITH":
-                source_label = "Company"  # Honeywell COMPETES_WITH → source is Company
-            elif relationship_type == "OFFERS_PRODUCT":
-                source_label = "Company"  # Company OFFERS_PRODUCT → source is Company
-            elif relationship_type == "HAS_PRICE":
-                source_label = "Product"  # Product HAS_PRICE → source is Product
-            elif relationship_type == "HAS_SPECIFICATION":
-                source_label = "Product"  # Product HAS_SPECIFICATION → source is Product
-            else:
-                # Default to Company for unknown relationships
-                source_label = "Company"
+        # === SPECIAL HANDLING FOR HAS_SPEC RELATIONSHIPS ===
+        if relationship_type == "HAS_SPEC":
+            # Support both "spec_type" (from agent) and "spec_name" (legacy)
+            spec_name = rel.get("spec_type") or rel.get("spec_name", "")
+            spec_value = rel.get("spec_value", target_name)
+            rel_snippet = _esc(rel.get("snippet", ""))
+            
+            # Create specification node with rich metadata
+            spec_display_name = _normalize_spec_name(spec_name)
+            # Use a unique ID internally but display the value
+            spec_node_id = f"{source_name}_{spec_name}"
+            # The displayed name shows the spec type and value
+            spec_display_value = f"{spec_display_name}: {spec_value}"
+            # Make the specification node name unique per product to avoid cross-links
+            spec_node_name = f"{source_name} | {spec_display_value}"
+            
+            if spec_node_id not in created_specs:
+                created_specs.add(spec_node_id)
+                
+                # Specification node: name shows the value for display in graph
+                stmts.append(
+                    f"MERGE (spec:Specification {{name: '{_esc(spec_node_name)}'}}) "
+                    f"ON CREATE SET spec.spec_type = '{_esc(spec_name)}', "
+                    f"spec.display_name = '{_esc(spec_display_name)}', "
+                    f"spec.value = '{_esc(spec_value)}', "
+                    f"spec.product = '{source_name}', "
+                    f"spec.source_urls = ['{rel_url}'] "
+                    f"ON MATCH SET spec.value = '{_esc(spec_value)}', "
+                    f"spec.source_urls = CASE WHEN '{rel_url}' IN spec.source_urls THEN spec.source_urls ELSE spec.source_urls + '{rel_url}' END;"
+                )
+            
+            # Create product node if not exists
+            if source_name not in created_products:
+                created_products.add(source_name)
+                stmts.append(
+                    f"MERGE (p:Product {{name: '{source_name}'}}) "
+                    f"ON CREATE SET p.source_urls = ['{rel_url}'] "
+                    f"ON MATCH SET p.source_urls = CASE WHEN '{rel_url}' IN p.source_urls THEN p.source_urls ELSE p.source_urls + '{rel_url}' END;"
+                )
+            
+            # Create HAS_SPEC relationship
+            stmts.append(
+                f"MATCH (p:Product {{name: '{source_name}'}}), "
+                f"(spec:Specification {{name: '{_esc(spec_node_name)}'}}) "
+                f"MERGE (p)-[rel:HAS_SPEC]->(spec) "
+                f"ON CREATE SET rel.source_urls = ['{rel_url}'], rel.evidence_ids = {evidence_ids_str}, rel.snippet = '{rel_snippet}' "
+                f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END, "
+                f"rel.snippet = CASE WHEN rel.snippet IS NULL OR rel.snippet = '' THEN '{rel_snippet}' ELSE rel.snippet END;"
+            )
+            continue
         
-        # Normalize target label
-        if target_label in ("Company", "Brand"):
-            target_label = "Company"
-        elif target_label == "Product":
-            target_label = "Product"
-        elif target_label == "Price":
-            target_label = "Price"
-        elif target_label == "Specification":
-            target_label = "Specification"
-        else:
-            # Invalid or missing label - infer from relationship type
-            if relationship_type == "COMPETES_WITH":
-                target_label = "Company"  # → COMPETES_WITH Company, target is Company
-            elif relationship_type == "OFFERS_PRODUCT":
-                target_label = "Product"  # → OFFERS_PRODUCT Product, target is Product
-            elif relationship_type == "HAS_PRICE":
-                target_label = "Price"  # → HAS_PRICE Price, target is Price
-            elif relationship_type == "HAS_SPECIFICATION":
-                target_label = "Specification"  # → HAS_SPECIFICATION Specification, target is Specification
-            else:
-                # Default to Product for unknown relationships
-                target_label = "Product"
+        # === SPECIAL HANDLING FOR HAS_REVIEW RELATIONSHIPS ===
+        if relationship_type == "HAS_REVIEW":
+            review_text = rel.get("review_text", target_name)[:200]  # Limit text length
+            rating = rel.get("rating", "")
+            review_source = rel.get("review_source", "")
+            rel_url = _esc(rel.get("source_url") or doc_url)
+            rel_snippet = _esc(rel.get("snippet", ""))
+            
+            # Create a unique review node name
+            review_display = f"{rating}: {review_text[:50]}..." if rating else f"{review_text[:50]}..."
+            review_node_id = f"{source_name}_{hash(review_text) % 10000}"
+            
+            # Create review node
+            stmts.append(
+                f"MERGE (review:Review {{name: '{_esc(review_display)}'}}) "
+                f"ON CREATE SET review.text = '{_esc(review_text)}', "
+                f"review.rating = '{_esc(rating)}', "
+                f"review.source = '{_esc(review_source)}', "
+                f"review.product = '{source_name}', "
+                f"review.source_urls = ['{rel_url}'] "
+                f"ON MATCH SET review.text = '{_esc(review_text)}', "
+                f"review.source_urls = CASE WHEN '{rel_url}' IN review.source_urls THEN review.source_urls ELSE review.source_urls + '{rel_url}' END;"
+            )
+            
+            # Create product node if not exists
+            if source_name not in created_products:
+                created_products.add(source_name)
+                stmts.append(
+                    f"MERGE (p:Product {{name: '{source_name}'}}) "
+                    f"ON CREATE SET p.source_urls = ['{rel_url}'] "
+                    f"ON MATCH SET p.source_urls = CASE WHEN '{rel_url}' IN p.source_urls THEN p.source_urls ELSE p.source_urls + '{rel_url}' END;"
+                )
+            
+            # Create HAS_REVIEW relationship
+            stmts.append(
+                f"MATCH (p:Product {{name: '{source_name}'}}), "
+                f"(review:Review {{name: '{_esc(review_display)}'}}) "
+                f"MERGE (p)-[rel:HAS_REVIEW]->(review) "
+                f"ON CREATE SET rel.source_urls = ['{rel_url}'], rel.snippet = '{rel_snippet}', rel.evidence_ids = {evidence_ids_str} "
+                f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END, "
+                f"rel.snippet = CASE WHEN rel.snippet IS NULL OR rel.snippet = '' THEN '{rel_snippet}' ELSE rel.snippet END, "
+                f"rel.evidence_ids = CASE WHEN SIZE(rel.evidence_ids) = 0 THEN {evidence_ids_str} ELSE rel.evidence_ids END;"
+            )
+            continue
         
-        # Create source node with source_urls tracking
+        # === SPECIAL HANDLING FOR HAS_PRICE RELATIONSHIPS ===
+        if relationship_type == "HAS_PRICE":
+            price_value = rel.get("price_value", target_name)
+            rel_snippet = _esc(rel.get("snippet", ""))
+            price_node_name = f"{source_name} | {price_value}"
+            
+            # Price node unique per product
+            stmts.append(
+                f"MERGE (price:Price {{name: '{_esc(price_node_name)}'}}) "
+                f"ON CREATE SET price.value = '{_esc(price_value)}', price.source_urls = ['{rel_url}'] "
+                f"ON MATCH SET price.value = '{_esc(price_value)}', "
+                f"price.source_urls = CASE WHEN '{rel_url}' IN price.source_urls THEN price.source_urls ELSE price.source_urls + '{rel_url}' END;"
+            )
+            
+            # Create product node if not exists
+            if source_name not in created_products:
+                created_products.add(source_name)
+                stmts.append(
+                    f"MERGE (p:Product {{name: '{source_name}'}}) "
+                    f"ON CREATE SET p.source_urls = ['{rel_url}'] "
+                    f"ON MATCH SET p.source_urls = CASE WHEN '{rel_url}' IN p.source_urls THEN p.source_urls ELSE p.source_urls + '{rel_url}' END;"
+                )
+            
+            # Create HAS_PRICE relationship
+            stmts.append(
+                f"MATCH (p:Product {{name: '{source_name}'}}), "
+                f"(price:Price {{name: '{_esc(price_node_name)}'}}) "
+                f"MERGE (p)-[rel:HAS_PRICE]->(price) "
+                f"ON CREATE SET rel.source_urls = ['{rel_url}'], rel.evidence_ids = {evidence_ids_str}, rel.snippet = '{rel_snippet}' "
+                f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END, "
+                f"rel.evidence_ids = CASE WHEN SIZE(rel.evidence_ids) = 0 THEN {evidence_ids_str} ELSE rel.evidence_ids END, "
+                f"rel.snippet = CASE WHEN rel.snippet IS NULL OR rel.snippet = '' THEN '{rel_snippet}' ELSE rel.snippet END;"
+            )
+            continue
+        
+        # === STANDARD RELATIONSHIP HANDLING ===
+        
+        # Create source node
         stmts.append(
             f"MERGE (s:{source_label} {{name: '{source_name}'}}) "
             f"ON CREATE SET s.source_urls = ['{rel_url}'] "
             f"ON MATCH SET s.source_urls = CASE WHEN '{rel_url}' IN s.source_urls THEN s.source_urls ELSE s.source_urls + '{rel_url}' END;"
         )
         
-        # Create target node with source_urls tracking
+        # Create target node
         stmts.append(
             f"MERGE (t:{target_label} {{name: '{target_name}'}}) "
             f"ON CREATE SET t.source_urls = ['{rel_url}'] "
             f"ON MATCH SET t.source_urls = CASE WHEN '{rel_url}' IN t.source_urls THEN t.source_urls ELSE t.source_urls + '{rel_url}' END;"
         )
         
-        # Create relationship with source_urls and evidence_ids tracking
+        # Create relationship
+        rel_snippet = _esc(rel.get("snippet", ""))
         stmts.append(
             f"MATCH (s:{source_label} {{name: '{source_name}'}}), (t:{target_label} {{name: '{target_name}'}}) "
             f"MERGE (s)-[rel:{relationship_type}]->(t) "
-            f"ON CREATE SET rel.source_urls = ['{rel_url}'], rel.evidence_ids = {evidence_ids_str} "
+            f"ON CREATE SET rel.source_urls = ['{rel_url}'], rel.evidence_ids = {evidence_ids_str}, rel.snippet = '{rel_snippet}' "
             f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END, "
-            f"rel.evidence_ids = CASE WHEN SIZE(rel.evidence_ids) = 0 THEN {evidence_ids_str} ELSE rel.evidence_ids END;"
+            f"rel.evidence_ids = CASE WHEN SIZE(rel.evidence_ids) = 0 THEN {evidence_ids_str} ELSE rel.evidence_ids END, "
+            f"rel.snippet = CASE WHEN rel.snippet IS NULL OR rel.snippet = '' THEN '{rel_snippet}' ELSE rel.snippet END;"
         )
     
     # Combine all statements
     cypher = "\n".join(stmts)
     
-    # Debug output
     print(f"[cypher] Generated {len(stmts)} statements")
-    print(f"[cypher] Preview: {cypher[:200]}...")
+    print(f"[cypher] Preview: {cypher[:300]}...")
     
     return cypher
+
+
+def _normalize_label(label: str, relationship_type: str, is_source: bool) -> str:
+    """Normalize node labels based on context."""
+    if label in ("Company", "Brand"):
+        return "Company"
+    elif label == "Product":
+        return "Product"
+    elif label == "Price":
+        return "Price"
+    elif label == "Specification":
+        return "Specification"
+    else:
+        # Infer from relationship type
+        if relationship_type == "COMPETES_WITH":
+            return "Company"
+        elif relationship_type == "OFFERS_PRODUCT":
+            return "Company" if is_source else "Product"
+        elif relationship_type == "HAS_PRICE":
+            return "Product" if is_source else "Price"
+        elif relationship_type in ("HAS_SPECIFICATION", "HAS_SPEC"):
+            return "Product" if is_source else "Specification"
+        elif relationship_type == "HAS_REVIEW":
+            return "Product" if is_source else "Review"
+        else:
+            return "Company" if is_source else "Product"
+
+
+# =============================================================================
+# ENHANCED QUERIES FOR SPECIFICATIONS
+# =============================================================================
+
+def get_product_comparison_query(product_names: List[str]) -> str:
+    """
+    Generate a Cypher query to compare specifications across products.
+    
+    Example usage:
+    MATCH (p:Product)-[:HAS_SPEC]->(s:Specification)
+    WHERE p.name IN ['ST700', 'Rosemount 3051', 'A-10']
+    RETURN p.name as product, s.spec_type, s.value
+    ORDER BY s.spec_type, p.name
+    """
+    products_str = ", ".join([f"'{_esc(p)}'" for p in product_names])
+    return f"""
+MATCH (p:Product)-[:HAS_SPEC]->(s:Specification)
+WHERE p.name IN [{products_str}]
+RETURN p.name as product, s.spec_type as spec, s.value as value
+ORDER BY s.spec_type, p.name
+"""
+
+
+def get_spec_pivot_query() -> str:
+    """
+    Generate a query to get all products with their specs in a pivotable format.
+    """
+    return """
+MATCH (c:Company)-[:OFFERS_PRODUCT]->(p:Product)
+OPTIONAL MATCH (p)-[:HAS_SPEC]->(s:Specification)
+OPTIONAL MATCH (p)-[:HAS_PRICE]->(price:Price)
+RETURN 
+    c.name as company,
+    p.name as product,
+    collect(DISTINCT {spec: s.spec_type, value: s.value}) as specifications,
+    price.name as price
+ORDER BY c.name, p.name
+"""
+
+
+def get_spec_search_query(spec_type: str, condition: str) -> str:
+    """
+    Generate a query to find products matching a specification condition.
+    
+    Example: Find products with accuracy better than 0.1%
+    """
+    return f"""
+MATCH (p:Product)-[:HAS_SPEC]->(s:Specification)
+WHERE s.spec_type = '{_esc(spec_type)}' AND {condition}
+RETURN p.name as product, s.value as {spec_type}
+ORDER BY s.value
+"""
