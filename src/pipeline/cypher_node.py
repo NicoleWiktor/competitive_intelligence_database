@@ -14,11 +14,26 @@ This enables full traceability from graph relationships back to original source 
 from __future__ import annotations
 
 from typing import Dict, List
+import hashlib
 
 
 def _esc(s: str) -> str:
-    """Escape special characters for Cypher queries."""
-    return (s or "").replace("\\", "\\\\").replace("'", "\\'")
+    """
+    Escape text so it is safe inside a Cypher string literal:
+    - Escape single quotes
+    - Escape backslashes
+    - Replace newlines with \n
+    - Replace carriage returns with \r
+    """
+    if not s:
+        return ""
+
+    return (
+        s.replace("\\", "\\\\")
+         .replace("'", "\\'")
+         .replace("\n", "\\n")
+         .replace("\r", "\\r")
+    )
 
 
 def to_merge_cypher(data: Dict) -> str:
@@ -48,120 +63,182 @@ def to_merge_cypher(data: Dict) -> str:
         return ""
     
     stmts: List[str] = []
-    
+
     # Step 1: Create constraints for unique node names
     stmts.extend([
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Company) REQUIRE n.name IS UNIQUE;",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Product) REQUIRE n.name IS UNIQUE;",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Price) REQUIRE n.name IS UNIQUE;",
-        "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Specification) REQUIRE n.name IS UNIQUE;",
+        "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Specification) REQUIRE n.name IS UNIQUE;"
     ])
-    
+
+    # Build lookup table mapping company → product for long-text node naming
+    product_lookup = {}
+    for r in data.get("Relationships", []):
+        if r.get("relationship") == "OFFERS_PRODUCT":
+            comp = r.get("source")
+            prod = r.get("target")
+            if comp and prod:
+                product_lookup[comp] = prod
+
     # Step 2: Extract source URL from data
     raw_url = (data.get("Doc") or {}).get("source_url") or ""
     if isinstance(raw_url, list):
-        doc_url = _esc(raw_url[-1] if raw_url else "")  # Use most recent URL
+        doc_url = _esc(raw_url[-1] if raw_url else "")
     else:
         doc_url = _esc(raw_url)
-    
-    # Step 3: Process each relationship to create nodes and edges
+
+    # Step 3: Process each relationship
     for rel in data.get("Relationships", []) or []:
-        # Get relationship details
-        relationship_type = _esc((rel.get("relationship") or "").upper().replace(" ", "_"))
+        raw_rel = rel.get("relationship", "").upper().replace(" ", "_")
+        primary_rel = raw_rel.split("|")[0].strip()  # take only the first type
+
+        if not primary_rel:
+            continue  # skip malformed relationship
+
+        relationship_type = primary_rel
+        VALID_RELATIONSHIPS = {
+            "COMPETES_WITH",
+            "OFFERS_PRODUCT",
+            "HAS_PRICE",
+            "HAS_SPECIFICATION",
+            "HAS_DESCRIPTION",
+            "HAS_REVIEW",
+            "HAS_SPEC_SHEET"
+        }
+
+        if relationship_type not in VALID_RELATIONSHIPS:
+            continue
+
         source_label = rel.get("source_type") or "Company"
         target_label = rel.get("target_type") or "Product"
+
+        # Fix invalid multi-label strings like "Company|Product"
+        if "|" in source_label:
+            source_label = source_label.split("|")[0].strip()
+
+        if "|" in target_label:
+            target_label = target_label.split("|")[0].strip()
+
         source_name = _esc(rel.get("source") or "")
-        target_name = _esc(rel.get("target") or "")
-        
-        # Get specific source URL for this relationship (fallback to doc_url)
+        raw_target_value = rel.get("target") or ""
+        target_text = _esc(raw_target_value)
+
+        def shorten_text_id(text: str) -> str:
+            return hashlib.md5(text.encode()).hexdigest()[:8]
+
+        # Resolve product name for long-text nodes
+        product_name = rel.get("source", "")
+        if product_name in product_lookup:
+            product_name = product_lookup[product_name]
+        product_name = _esc(product_name)
+
+        # Determine target_name
+        if relationship_type == "HAS_DESCRIPTION":
+            short_name = f"{product_name} Description"
+            target_name = _esc(short_name)
+
+        elif relationship_type == "HAS_SPEC_SHEET":
+            short_name = f"{product_name} Spec Sheet"
+            target_name = _esc(short_name)
+
+        elif relationship_type == "HAS_REVIEW":
+            text_hash = shorten_text_id(target_text)
+            short_name = f"{product_name} Review {text_hash}"
+            target_name = _esc(short_name)
+
+        else:
+            target_name = target_text
+
+        # Reject garbage names
+        if source_name.lower() in ("", "entity name"):
+            continue
+        if target_name.lower() in ("", "entity name"):
+            continue
+
+        # URL for this relationship
         rel_url = _esc(rel.get("source_url") or doc_url)
-        
-        # Get evidence IDs (ChromaDB chunk IDs) for this relationship
+
+        # Evidence IDs
         evidence_ids = rel.get("evidence_ids") or []
-        # Escape and format as Cypher list
         evidence_ids_str = "[" + ", ".join([f"'{_esc(eid)}'" for eid in evidence_ids]) + "]"
-        
-        # Skip if missing required fields
+
+        # Skip incomplete relationships
         if not (source_name and target_name and relationship_type):
             continue
-        
-        # Normalize label names to ONLY valid Neo4j labels: Company, Product, Price, Specification
-        # CRITICAL: Labels must be valid identifiers, NOT entity names
-        
+
         # Normalize source label
-        if source_label in ("Company", "Brand"):
-            source_label = "Company"
-        elif source_label == "Product":
+        if relationship_type in ("HAS_DESCRIPTION", "HAS_SPEC_SHEET", "HAS_REVIEW"):
             source_label = "Product"
-        elif source_label == "Price":
-            source_label = "Price"
-        elif source_label == "Specification":
-            source_label = "Specification"
+        elif relationship_type == "HAS_PRICE":
+            source_label = "Product"
+        elif relationship_type == "OFFERS_PRODUCT":
+            source_label = "Company"
+        elif relationship_type == "COMPETES_WITH":
+            source_label = "Company"
         else:
-            # Invalid or missing label - infer from relationship type
-            if relationship_type == "COMPETES_WITH":
-                source_label = "Company"  # Honeywell COMPETES_WITH → source is Company
-            elif relationship_type == "OFFERS_PRODUCT":
-                source_label = "Company"  # Company OFFERS_PRODUCT → source is Company
-            elif relationship_type == "HAS_PRICE":
-                source_label = "Product"  # Product HAS_PRICE → source is Product
-            elif relationship_type == "HAS_SPECIFICATION":
-                source_label = "Product"  # Product HAS_SPECIFICATION → source is Product
-            else:
-                # Default to Company for unknown relationships
-                source_label = "Company"
-        
+            source_label = "Company"
+
         # Normalize target label
-        if target_label in ("Company", "Brand"):
-            target_label = "Company"
-        elif target_label == "Product":
-            target_label = "Product"
-        elif target_label == "Price":
+        if relationship_type == "HAS_DESCRIPTION":
+            target_label = "Description"
+        elif relationship_type == "HAS_SPEC_SHEET":
+            target_label = "SpecSheet"
+        elif relationship_type == "HAS_REVIEW":
+            target_label = "Review"
+        elif relationship_type == "HAS_PRICE":
             target_label = "Price"
-        elif target_label == "Specification":
+        elif relationship_type == "HAS_SPECIFICATION":
             target_label = "Specification"
+        elif relationship_type == "OFFERS_PRODUCT":
+            target_label = "Product"
+        elif relationship_type == "COMPETES_WITH":
+            target_label = "Company"
         else:
-            # Invalid or missing label - infer from relationship type
-            if relationship_type == "COMPETES_WITH":
-                target_label = "Company"  # → COMPETES_WITH Company, target is Company
-            elif relationship_type == "OFFERS_PRODUCT":
-                target_label = "Product"  # → OFFERS_PRODUCT Product, target is Product
-            elif relationship_type == "HAS_PRICE":
-                target_label = "Price"  # → HAS_PRICE Price, target is Price
-            elif relationship_type == "HAS_SPECIFICATION":
-                target_label = "Specification"  # → HAS_SPECIFICATION Specification, target is Specification
-            else:
-                # Default to Product for unknown relationships
-                target_label = "Product"
-        
-        # Create source node with source_urls tracking
+            target_label = "Product"
+
+        # Create source node
         stmts.append(
             f"MERGE (s:{source_label} {{name: '{source_name}'}}) "
             f"ON CREATE SET s.source_urls = ['{rel_url}'] "
-            f"ON MATCH SET s.source_urls = CASE WHEN '{rel_url}' IN s.source_urls THEN s.source_urls ELSE s.source_urls + '{rel_url}' END;"
+            f"ON MATCH SET s.source_urls = CASE WHEN '{rel_url}' IN s.source_urls "
+            f"THEN s.source_urls ELSE s.source_urls + '{rel_url}' END;"
         )
-        
-        # Create target node with source_urls tracking
+
+        # Create target node
+        if relationship_type in ("HAS_SPEC_SHEET", "HAS_DESCRIPTION", "HAS_REVIEW"):
+            stmts.append(
+                f"MERGE (t:{target_label} {{name: '{target_name}'}}) "
+                f"ON CREATE SET t.source_urls = ['{rel_url}'], t.text = '{target_text}' "
+                f"ON MATCH SET "
+                f"t.source_urls = CASE WHEN '{rel_url}' IN t.source_urls "
+                f"THEN t.source_urls ELSE t.source_urls + '{rel_url}' END, "
+                f"t.text = CASE WHEN t.text IS NULL THEN '{target_text}' ELSE t.text END;"
+            )
+        else:
+            stmts.append(
+                f"MERGE (t:{target_label} {{name: '{target_name}'}}) "
+                f"ON CREATE SET t.source_urls = ['{rel_url}'] "
+                f"ON MATCH SET t.source_urls = CASE WHEN '{rel_url}' IN t.source_urls "
+                f"THEN t.source_urls ELSE t.source_urls + '{rel_url}' END;"
+            )
+
+        # Create relationship
         stmts.append(
-            f"MERGE (t:{target_label} {{name: '{target_name}'}}) "
-            f"ON CREATE SET t.source_urls = ['{rel_url}'] "
-            f"ON MATCH SET t.source_urls = CASE WHEN '{rel_url}' IN t.source_urls THEN t.source_urls ELSE t.source_urls + '{rel_url}' END;"
-        )
-        
-        # Create relationship with source_urls and evidence_ids tracking
-        stmts.append(
-            f"MATCH (s:{source_label} {{name: '{source_name}'}}), (t:{target_label} {{name: '{target_name}'}}) "
+            f"MATCH (s:{source_label} {{name: '{source_name}'}}), "
+            f"(t:{target_label} {{name: '{target_name}'}}) "
             f"MERGE (s)-[rel:{relationship_type}]->(t) "
             f"ON CREATE SET rel.source_urls = ['{rel_url}'], rel.evidence_ids = {evidence_ids_str} "
-            f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END, "
-            f"rel.evidence_ids = CASE WHEN SIZE(rel.evidence_ids) = 0 THEN {evidence_ids_str} ELSE rel.evidence_ids END;"
+            f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls "
+            f"THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END, "
+            f"rel.evidence_ids = CASE WHEN SIZE(rel.evidence_ids) = 0 "
+            f"THEN {evidence_ids_str} ELSE rel.evidence_ids END;"
         )
-    
-    # Combine all statements
+
+    # Combine statements
     cypher = "\n".join(stmts)
-    
-    # Debug output
+
     print(f"[cypher] Generated {len(stmts)} statements")
     print(f"[cypher] Preview: {cypher[:200]}...")
-    
+
     return cypher

@@ -12,8 +12,12 @@ LangGraph Integration:
     Output: state["results"] - enriched with raw_content and chunk_ids fields
 """
 
+
 from __future__ import annotations
 
+import re
+from urllib.parse import urljoin
+from src.pipeline.pdf_utils import extract_pdf_text
 from typing import Any, Dict, List
 
 from tavily import TavilyClient
@@ -88,22 +92,84 @@ def extract_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     r["raw_content"] = r["content"]
     
     # Chunk and store in ChromaDB
+    # ---------------------------------------------------------------------
+    # Chunk HTML + PDF Text and Store in ChromaDB
+    # ---------------------------------------------------------------------
     for r in results:
-        raw_content = r.get("raw_content") or r.get("content") or ""
-        if raw_content:
-            url = r.get("url", "")
-            title = r.get("title", "")
-            
-            # Chunk and store, get back chunk IDs
+        raw_html = r.get("raw_content") or r.get("content") or ""
+        url = r.get("url", "")
+        title = r.get("title", "")
+
+        # -----------------------------
+        # SAVE HTML for LLM extraction
+        # -----------------------------
+        r["html_text"] = raw_html
+
+        # -----------------------------
+        # DETECT PDF SPEC SHEET LINKS
+        # -----------------------------
+        pdf_urls = []
+        if raw_html:
+            pdf_urls = re.findall(r'href=[\'"]([^\'"]+\.pdf)[\'"]', raw_html, re.IGNORECASE)
+
+        resolved_pdf_urls = []
+        for pdf in pdf_urls:
+            if pdf.startswith("/"):
+                pdf = urljoin(url, pdf)
+            resolved_pdf_urls.append(pdf)
+
+        r["pdf_urls"] = resolved_pdf_urls
+
+        # -----------------------------
+        # DOWNLOAD & EXTRACT PDF TEXT
+        # -----------------------------
+        pdf_texts = []
+        for pdf in resolved_pdf_urls[:3]:  # Safety limit
+            pdf_text = extract_pdf_text(pdf)
+            if pdf_text:
+                pdf_texts.append(pdf_text)
+
+        if pdf_texts:
+            full_pdf_text = (
+                "=== SPEC SHEET PDF TEXT ===\n\n"
+                + "\n\n--- NEW PDF ---\n\n".join(pdf_texts)
+            )
+            r["pdf_text"] = full_pdf_text
+        else:
+            r["pdf_text"] = ""
+
+        # -----------------------------
+        # PREP FOR CHUNKING
+        # -----------------------------
+        chunk_sources = []
+
+        if raw_html:
+            chunk_sources.append(
+                ("html", raw_html)
+            )
+
+        if r["pdf_text"]:
+            chunk_sources.append(
+                ("pdf", r["pdf_text"])
+            )
+
+        all_chunk_ids = []
+
+        # -----------------------------
+        # CHUNK EACH SOURCE INTO ChromaDB
+        # -----------------------------
+        for source_type, text in chunk_sources:
             chunk_ids = chunk_and_store(
-                raw_content=raw_content,
+                raw_content=text,
                 source_url=url,
                 query=query,
-                page_title=title
+                page_title=title,
+                source_type=source_type,      # ADDED FIELD: html/pdf
             )
-            
-            # Attach chunk IDs to result
-            r["chunk_ids"] = chunk_ids
+            all_chunk_ids.extend(chunk_ids)
+
+        r["chunk_ids"] = all_chunk_ids
+
     
     # Debug: Show how many results have content
     with_content = sum(1 for r in results if r.get("raw_content"))

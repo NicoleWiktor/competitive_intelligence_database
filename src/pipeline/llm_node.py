@@ -105,12 +105,35 @@ def _build_prompt(text: str, schema: Dict[str, Any], existing_products: dict = N
         + "   - Extract technical specifications: pressure range, accuracy, output signal, material, temperature range, connection type\n"
         + "   - Combine multiple specs into a single concise string (max 200 chars)\n"
         + "   - Only extract specs you can SEE in the text - no guessing\n\n"
+
+        + "5. HAS_DESCRIPTION: Product → Verbatim Description\n"
+          "   - Extract the EXACT description text from the HTML page.\n"
+          "   - Do NOT summarize, rewrite, or paraphrase.\n"
+          "   - The extracted description MUST appear exactly as a substring of the HTML provided.\n"
+          "   - This should represent the primary marketing description that appears on the product page.\n\n"
+
+        + "6. HAS_SPEC_SHEET: Product → Spec Sheet PDF Text\n"
+          "   - If PDF spec sheet text is present, extract its content.\n"
+          "   - Combine multiple PDF texts into one string.\n"
+          "   - Only extract specs that appear directly in the PDF text.\n"
+          "   - This string may be long; do not shorten it unless instructed.\n\n"
+
+        + "7. HAS_REVIEW: Product → Customer Review\n"
+          "   - Extract FULL customer reviews from the page.\n"
+          "   - Include rating, date, reviewer name IF they appear.\n"
+          "   - A review MUST come from a real review section — do NOT invent anything.\n"
+          "   - Each review is one relationship instance.\n"
+          "   - The review text MUST appear exactly in the HTML provided.\n\n"
         
         + "IMPORTANT:\n"
         + "- ONLY extract data visible in this text - no hallucinations\n"
         + "- For OFFERS_PRODUCT: Look for product model names associated with companies\n"
         + "- For HAS_PRICE: Price must be explicitly shown in the text\n"
         + "- Use consistent naming: same product name in OFFERS_PRODUCT and HAS_PRICE\n\n"
+        + "- For HAS_DESCRIPTION: target must be copied EXACTLY from the page with no changes.\n"
+        + "- For HAS_SPEC_SHEET: only include text visible in extracted PDF text.\n"
+        + "- For HAS_REVIEW: extract only real reviews found in the HTML. No assumptions.\n"
+
         
         + "TEXT:\n" + text[:5000] + "\n\n"
         + "Return valid JSON with the extracted relationships."
@@ -281,7 +304,13 @@ def llm_state_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # Process first search result (we get 1 URL per iteration)
     result = results[0]
-    text = result.get("raw_content") or result.get("content") or ""
+    html_text = result.get("html_text") or ""
+    pdf_text = result.get("pdf_text") or ""
+    text = ""
+    if html_text:
+        text += "\n=== HTML CONTENT ===\n" + html_text
+    if pdf_text:
+        text += "\n\n=== PDF CONTENT ===\n" + pdf_text
     url = result.get("url", "")
     chunk_ids = result.get("chunk_ids", [])  # Get ChromaDB chunk IDs for evidence linking
     
@@ -334,6 +363,10 @@ def _merge_data(existing: Dict[str, Any], new: Dict[str, Any], max_competitors: 
     products_by_company = {}
     prices_by_product = {}
     specs_by_product = {}
+    descriptions_by_product = {}
+    spec_sheets_by_product = {}
+    reviews_by_product = {}
+
     
     # Build tracking from existing relationships
     for rel in existing_rels:
@@ -356,6 +389,14 @@ def _merge_data(existing: Dict[str, Any], new: Dict[str, Any], max_competitors: 
         elif rel_type == "HAS_SPECIFICATION":
             if source and target:
                 specs_by_product[source] = target
+        elif rel_type == "HAS_DESCRIPTION":
+            descriptions_by_product[source] = target
+        elif rel_type == "HAS_SPEC_SHEET":
+            spec_sheets_by_product[source] = target
+        elif rel_type == "HAS_REVIEW":
+            # allow multiple reviews, track count
+            reviews_by_product[source] = reviews_by_product.get(source, 0) + 1
+
     
     # Add new relationships if under limits
     for rel in new_rels:
@@ -408,6 +449,22 @@ def _merge_data(existing: Dict[str, Any], new: Dict[str, Any], max_competitors: 
             if source and source not in specs_by_product:
                 specs_by_product[source] = target
                 existing_rels.append(rel)
+
+        elif rel_type == "HAS_DESCRIPTION":
+            if source and source not in descriptions_by_product:
+                descriptions_by_product[source] = target
+                existing_rels.append(rel)
+
+        elif rel_type == "HAS_SPEC_SHEET":
+            if source and source not in spec_sheets_by_product:
+                spec_sheets_by_product[source] = target
+                existing_rels.append(rel)
+
+        elif rel_type == "HAS_REVIEW":
+            if source and reviews_by_product.get(source, 0) < 20:
+                reviews_by_product[source] = reviews_by_product.get(source, 0) + 1
+                existing_rels.append(rel)
+
     
     # Return merged result
     result = dict(existing)

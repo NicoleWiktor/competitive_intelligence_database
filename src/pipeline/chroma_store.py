@@ -46,7 +46,8 @@ def chunk_and_store(
     raw_content: str,
     source_url: str,
     query: str = "",
-    page_title: str = ""
+    page_title: str = "",
+    source_type: str = "html"
 ) -> List[str]:
     """
     Chunk raw content and store in ChromaDB.
@@ -102,7 +103,8 @@ def chunk_and_store(
             "query": query,
             "page_title": page_title,
             "timestamp": timestamp,
-            "chunk_size": len(chunk_text)
+            "chunk_size": len(chunk_text),
+            "source_type": source_type
         })
     
     # Store in ChromaDB

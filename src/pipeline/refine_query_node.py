@@ -42,7 +42,7 @@ def refine_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
     max_iterations = state.get("max_iterations", 100)  # Increased for Phase 4
     max_competitors = state.get("max_competitors", 5)
     max_products_per_company = state.get("max_products_per_company", 1)
-    phase_attempts = state.get("phase_attempts", {"competitors": 0, "products": {}, "prices": {}, "specs": {}})
+    phase_attempts = state.get("phase_attempts", {"competitors": 0, "products": {}, "prices": {}, "specs": {}, "reviews": {}})
     
     # Safety: Stop if max iterations reached
     if iteration >= max_iterations:
@@ -56,6 +56,7 @@ def refine_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
     products_by_competitor = {}  # {"Wika": ["A-10"], ...}
     prices_by_product = {}  # {"A-10": "$161.09", ...}
     specs_by_product = {}  # {"A-10": "specifications string", ...}
+    reviews_by_product = {}  # {"A-10": 3, ...}
     
     for rel in relationships:
         rel_type = rel.get("relationship", "")
@@ -73,6 +74,9 @@ def refine_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
             prices_by_product[source] = target
         elif rel_type == "HAS_SPECIFICATION":
             specs_by_product[source] = target
+        elif rel_type == "HAS_REVIEW":
+            reviews_by_product[source] = reviews_by_product.get(source, 0) + 1
+
     
     # Print progress
     print(f"[refine] Iteration {iteration}: {len(competitors)} competitors, "
@@ -244,6 +248,62 @@ Return JSON: {{"query": "your search query here"}}"""
         except:
             pass
     
+
+    # PHASE 5: Find customer reviews for products (max 5 attempts per product)
+    products_needing_reviews = [
+        prod for comp_prods in products_by_competitor.values()
+        for prod in comp_prods
+        if reviews_by_product.get(prod, 0) == 0
+        and phase_attempts["reviews"].get(prod, 0) < 5
+    ]
+
+    if products_needing_reviews:
+        target_product = products_needing_reviews[0]
+        phase_attempts["reviews"][target_product] = phase_attempts["reviews"].get(target_product, 0) + 1
+
+        # Identify the company that makes the product
+        product_company = None
+        for comp, prods in products_by_competitor.items():
+            if target_product in prods:
+                product_company = comp
+                break
+
+        prompt = f"""Find customer reviews for the product "{target_product}" made by {product_company}.
+
+Look specifically for:
+- Customer review sections
+- Ratings (stars or numeric)
+- Reviewer names
+- Review dates
+- Long-form review text
+
+These sites often contain reviews:
+- Grainger
+- AutomationDirect
+- Amazon Business
+- Industrial distributor websites
+
+Attempt: {phase_attempts['reviews'][target_product]}/5
+
+Generate a search query that is very likely to yield real customer reviews.
+Return JSON: {{"query": "your search query here"}}"""
+
+        response = llm.invoke(prompt)
+        content = getattr(response, "content", str(response))
+
+        try:
+            result = json.loads(content)
+            new_query = result.get("query", "")
+            print(f"[refine] Phase 5 (Reviews for {target_product}, attempt {phase_attempts['reviews'][target_product]}/5): {new_query}")
+            return {
+                "query": new_query,
+                "needs_refinement": True,
+                "iteration": iteration + 1,
+                "phase_attempts": phase_attempts,
+            }
+        except:
+            pass
+
     # All phases complete - done!
     print("[refine] All phases complete - stopping")
     return {"needs_refinement": False, "iteration": iteration}

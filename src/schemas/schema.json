@@ -5,17 +5,59 @@
   "HoneywellProduct": "",
   "Competitor": "",
   "CompetitiveProduct": "",
+
   "Relationships": [
     {
-      "source_type": "Company|Product|Specification",
-      "source": "entity name",
-      "relationship": "COMPETES_WITH|OFFERS_PRODUCT|HAS_PRICE|HAS_SPECIFICATION",
-      "target_type": "Company|Product|Price|Specification",
-      "target": "entity name"
+      "source_type": "Company",
+      "source": "",
+      "relationship": "COMPETES_WITH",
+      "target_type": "Company",
+      "target": ""
+    },
+    {
+      "source_type": "Company",
+      "source": "",
+      "relationship": "OFFERS_PRODUCT",
+      "target_type": "Product",
+      "target": ""
+    },
+    {
+      "source_type": "Product",
+      "source": "",
+      "relationship": "HAS_PRICE",
+      "target_type": "Price",
+      "target": ""
+    },
+    {
+      "source_type": "Product",
+      "source": "",
+      "relationship": "HAS_SPECIFICATION",
+      "target_type": "Specification",
+      "target": ""
+    },
+    {
+      "source_type": "Product",
+      "source": "",
+      "relationship": "HAS_DESCRIPTION",
+      "target_type": "Description",
+      "target": ""
+    },
+    {
+      "source_type": "Product",
+      "source": "",
+      "relationship": "HAS_REVIEW",
+      "target_type": "Review",
+      "target": ""
+    },
+    {
+      "source_type": "Product",
+      "source": "",
+      "relationship": "HAS_SPEC_SHEET",
+      "target_type": "SpecSheet",
+      "target": ""
     }
   ],
-  "Doc": {
-    "source_url": ""
-  },
+
+  "Doc": { "source_url": "" },
   "Flags": {}
 }

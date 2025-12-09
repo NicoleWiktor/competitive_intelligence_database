@@ -160,14 +160,15 @@ if __name__ == "__main__":
             "competitors": 0,
             "products": {},  # Per-competitor tracking
             "prices": {},    # Per-product tracking
-            "specs": {}      # Per-product tracking (Phase 4)
+            "specs": {},      # Per-product tracking (Phase 4)
+            "reviews": {}    # Phase 5
         },
     }
     
     # Run pipeline
     # Recursion limit: 4 nodes per iteration × 110 iterations = 440, set to 500 for safety
     print("="*80)
-    print("STARTING COMPETITIVE INTELLIGENCE PIPELINE (4 PHASES)")
+    print("STARTING COMPETITIVE INTELLIGENCE PIPELINE (5 PHASES)")
     print("="*80)
     
     result = app.invoke(state, {"recursion_limit": 500})
