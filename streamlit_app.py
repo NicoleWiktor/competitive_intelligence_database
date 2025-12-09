@@ -1,0 +1,1025 @@
+"""
+Streamlit App - Competitive Intelligence Dashboard
+
+A beautiful, agentic-powered dashboard for Honeywell competitive intelligence.
+
+Features:
+1. 📊 Interactive Knowledge Graph Visualization
+2. 📋 Product Specification Comparison Table
+3. 🔍 Head-to-Head Product Comparison
+4. ✅ Human-in-the-Loop Verification
+5. 🤖 Run Agentic Pipeline from UI
+"""
+
+import streamlit as st
+import streamlit.components.v1 as components
+import json
+import pandas as pd
+from typing import List, Dict, Any, Optional
+from neo4j import GraphDatabase
+from pyvis.network import Network
+import tempfile
+import sys
+from pathlib import Path
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from src.config.settings import get_neo4j_config
+from src.pipeline.chroma_store import find_best_evidence_for_relationship
+from src.ontology.specifications import PRESSURE_TRANSMITTER_ONTOLOGY
+
+# =============================================================================
+# PAGE CONFIG & STYLES
+# =============================================================================
+
+st.set_page_config(
+    page_title="Competitive Intelligence Database",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Custom CSS for professional styling (neutral light greys)
+st.markdown("""
+<style>
+    .main { background: linear-gradient(180deg, #f7f7f8 0%, #f1f3f5 100%); }
+    .main-header {
+        background: linear-gradient(135deg, #f5f5f6 0%, #e5e7eb 100%);
+        padding: 2rem 2.5rem;
+        border-radius: 16px;
+        margin-bottom: 2rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
+        border: 1px solid #e5e7eb;
+    }
+    .main-header h1 { font-family: 'Inter', sans-serif; letter-spacing: 0.5px; color: #111827; margin: 0; }
+    .main-header p { color: #374151; margin: 0.2rem 0 0; font-size: 1rem; }
+    .section-header {
+        background: linear-gradient(90deg, #f5f6f7 0%, #e8ebef 100%);
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        margin: 2rem 0 1rem 0;
+        border-left: 4px solid #9ca3af;
+    }
+    .section-header h2 { color: #111827; margin: 0; font-size: 1.3rem; font-weight: 600; }
+    .metric-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+        color: #111827;
+    }
+    .metric-value { font-size: 1.8rem; font-weight: 700; color: #111827; }
+    .metric-label { font-size: 0.9rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+    .dataframe { background: #ffffff !important; border-radius: 8px; overflow: hidden; }
+    .dataframe th { background: #f3f4f6 !important; color: #111827 !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 16px !important; }
+    .dataframe td { background: #ffffff !important; color: #1f2937 !important; padding: 10px 16px !important; border-bottom: 1px solid #e5e7eb !important; }
+    .dataframe tr:hover td { background: #f3f4f6 !important; }
+    .comparison-winner { background: #e5e7eb !important; color: #111827 !important; font-weight: 600; }
+    .comparison-loser { background: #f9fafb !important; color: #6b7280 !important; }
+    .streamlit-expanderHeader { background: #f3f4f6; border-radius: 8px; }
+    .css-1d391kg { background: linear-gradient(180deg, #f7f7f8 0%, #f1f3f5 100%); }
+    .css-1d391kg p, .css-1d391kg label { color: #111827 !important; }
+    .stButton > button {
+        background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+        color: #111827;
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem 1.5rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        transition: all 0.2s;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%);
+        box-shadow: 0 4px 15px rgba(156, 163, 175, 0.35);
+        transform: translateY(-1px);
+    }
+    .stDataFrame { background: #ffffff; border-radius: 10px; border: 1px solid #e5e7eb; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] {
+        background: #f3f4f6;
+        border-radius: 8px 8px 0 0;
+        padding: 0.75rem 1.5rem;
+        color: #4b5563;
+    }
+    .stTabs [data-baseweb="tab"]:hover { color: #111827; }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+        color: #111827;
+    }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+""", unsafe_allow_html=True)
+
+
+# =============================================================================
+# DATABASE FUNCTIONS
+# =============================================================================
+
+def get_neo4j_driver():
+    """Create Neo4j connection."""
+    cfg = get_neo4j_config()
+    return GraphDatabase.driver(cfg['uri'], auth=(cfg['user'], cfg['password']))
+
+
+def fetch_all_products_with_specs() -> pd.DataFrame:
+    """Fetch all products with their specifications for the comparison table."""
+    driver = get_neo4j_driver()
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (c:Company)-[:OFFERS_PRODUCT]->(p:Product)
+            OPTIONAL MATCH (p)-[:HAS_SPEC]->(s:Specification)
+            OPTIONAL MATCH (p)-[:HAS_PRICE]->(price:Price)
+            OPTIONAL MATCH (p)-[:HAS_REVIEW]->(r:Review)
+            RETURN 
+                c.name as company,
+                p.name as product,
+                collect(DISTINCT {spec_type: s.spec_type, value: s.value}) as specifications,
+                price.name as price,
+                p.source_urls as sources,
+                collect(DISTINCT {text: r.text, rating: r.rating, source: r.source}) as reviews
+            ORDER BY c.name, p.name
+        """)
+        
+        rows = []
+        for record in result:
+            row = {
+                'Company': record['company'],
+                'Product': record['product'],
+                'Price': record['price'] or '-',
+                'Sources': record['sources'] or [],
+                'Review Count': len([rv for rv in record['reviews'] or [] if rv.get('text')]),
+            }
+            
+            # First review snippet
+            first_review = None
+            if record['reviews']:
+                for rv in record['reviews']:
+                    if rv.get('text'):
+                        first_review = rv
+                        break
+            if first_review:
+                snippet = (first_review.get('text', '') or '')[:120]
+                rating = first_review.get('rating', '')
+                source = first_review.get('source', '')
+                row['Review Snippet'] = f"{rating} - {snippet} ({source})" if rating else f"{snippet} ({source})"
+            else:
+                row['Review Snippet'] = ''
+            
+            # Flatten specifications
+            for spec in record['specifications']:
+                if spec['spec_type'] and spec['value']:
+                    spec_display = spec['spec_type'].replace('_', ' ').title()
+                    row[spec_display] = spec['value']
+            
+            rows.append(row)
+    
+    driver.close()
+    
+    if rows:
+        df = pd.DataFrame(rows)
+        return df
+    return pd.DataFrame()
+
+
+def fetch_graph_data():
+    """Fetch all nodes and relationships for visualization."""
+    driver = get_neo4j_driver()
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (source)-[rel]->(target)
+            RETURN 
+                id(source) as source_id,
+                labels(source)[0] as source_label,
+                source.name as source_name,
+                type(rel) as relationship_type,
+                id(target) as target_id,
+                labels(target)[0] as target_label,
+                target.name as target_name,
+                rel.source_urls as rel_sources,
+                rel.evidence_ids as rel_evidence,
+                rel.snippet as rel_snippet
+        """)
+        
+        nodes = {}
+        edges = []
+        
+        for record in result:
+            source_id = record['source_id']
+            if source_id not in nodes:
+                source_name = record['source_name']
+                source_group = record['source_label']
+                # For specs/prices/reviews, strip the product prefix before the pipe for a cleaner label
+                if source_group in ["Specification", "Price", "Review"] and "|" in source_name:
+                    clean_source_label = source_name.split("|", 1)[1].strip()
+                else:
+                    clean_source_label = source_name
+                nodes[source_id] = {
+                    'id': source_id,
+                    'label': clean_source_label[:30],
+                    'title': clean_source_label,
+                    'group': source_group,
+                    'full_name': source_name
+                }
+            
+            target_id = record['target_id']
+            if target_id not in nodes:
+                target_name = record['target_name']
+                target_group = record['target_label']
+                if target_group in ["Specification", "Price", "Review"] and "|" in target_name:
+                    clean_target_label = target_name.split("|", 1)[1].strip()
+                else:
+                    clean_target_label = target_name
+                nodes[target_id] = {
+                    'id': target_id,
+                    'label': clean_target_label[:30],
+                    'title': clean_target_label,
+                    'group': target_group,
+                    'full_name': target_name
+                }
+            
+            edges.append({
+                'from': source_id,
+                'to': target_id,
+                'label': record['relationship_type'],
+                'title': record['relationship_type'],
+                'sources': record.get('rel_sources') or [],
+                'evidence_ids': record.get('rel_evidence') or [],
+                'snippet': record.get('rel_snippet', "") or "",
+            })
+    
+    driver.close()
+    return list(nodes.values()), edges
+
+
+def fetch_graph_stats() -> Dict[str, int]:
+    """Get statistics about the knowledge graph."""
+    driver = get_neo4j_driver()
+    with driver.session() as session:
+        stats = {}
+        
+        result = session.run("""
+            MATCH (n)
+            RETURN labels(n)[0] as label, count(n) as count
+        """)
+        stats['nodes'] = {record['label']: record['count'] for record in result}
+        
+        result = session.run("""
+            MATCH ()-[r]->()
+            RETURN type(r) as type, count(r) as count
+        """)
+        stats['relationships'] = {record['type']: record['count'] for record in result}
+    
+    driver.close()
+    return stats
+
+
+def _is_valid_http_url(url: str) -> bool:
+    if not url or not isinstance(url, str):
+        return False
+    url = url.strip()
+    return url.startswith("http://") or url.startswith("https://")
+
+
+def fetch_all_relationships():
+    """Fetch all relationships for verification."""
+    driver = get_neo4j_driver()
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (source)-[rel]->(target)
+            RETURN 
+                id(rel) as rel_id,
+                labels(source)[0] as source_label,
+                source.name as source_name,
+                type(rel) as relationship_type,
+                labels(target)[0] as target_label,
+                target.name as target_name,
+                rel.source_urls as source_urls,
+                rel.evidence_ids as evidence_ids,
+                rel.snippet as snippet
+            ORDER BY relationship_type, source_name
+        """)
+        
+        relationships = []
+        for record in result:
+            relationships.append({
+                'rel_id': record['rel_id'],
+                'source_label': record['source_label'],
+                'source_name': record['source_name'],
+                'relationship_type': record['relationship_type'],
+                'target_label': record['target_label'],
+                'target_name': record['target_name'],
+                'source_urls': record['source_urls'] or [],
+                'evidence_ids': record['evidence_ids'] or [],
+                'snippet': record['snippet'] or ""
+            })
+    
+    driver.close()
+    return relationships
+
+
+def delete_relationships(rel_ids: List[int]):
+    """Delete relationships from Neo4j."""
+    driver = get_neo4j_driver()
+    with driver.session() as session:
+        for rel_id in rel_ids:
+            session.run("""
+                MATCH ()-[r]->()
+                WHERE id(r) = $rel_id
+                DELETE r
+            """, rel_id=rel_id)
+        driver.close()
+
+
+# =============================================================================
+# VISUALIZATION FUNCTIONS
+# =============================================================================
+
+def create_network_graph(nodes, edges):
+    """Create beautiful interactive network graph with white background."""
+    net = Network(
+        height="650px",
+        width="100%",
+        bgcolor="#ffffff",
+        font_color="#1f2937",
+        directed=True
+    )
+    
+    net.set_options("""
+    {
+        "layout": {
+            "hierarchical": {
+                "enabled": false
+            }
+        },
+        "physics": {
+            "enabled": true,
+            "barnesHut": {
+                "gravitationalConstant": -25000,
+                "centralGravity": 0.3,
+                "springLength": 200,
+                "springConstant": 0.04,
+                "damping": 0.6
+            },
+            "stabilization": {
+                "enabled": true,
+                "iterations": 200
+            }
+        },
+        "nodes": {
+            "font": {"size": 14, "face": "Inter, sans-serif", "color": "#1f2937"},
+            "borderWidth": 3,
+            "borderWidthSelected": 4,
+            "shadow": {
+                "enabled": true,
+                "color": "rgba(0,0,0,0.15)",
+                "size": 10
+            }
+        },
+        "edges": {
+            "font": {"size": 11, "align": "middle", "color": "#6b7280"},
+            "arrows": {"to": {"enabled": true, "scaleFactor": 0.6}},
+            "smooth": {"type": "continuous"},
+            "width": 2,
+            "color": {"color": "#9ca3af", "highlight": "#3b82f6"}
+        },
+        "interaction": {
+            "hover": true,
+            "tooltipDelay": 100,
+            "navigationButtons": true,
+            "keyboard": true
+        }
+    }
+    """)
+    
+    # Neutral color scheme
+    colors = {
+        'Company': {'background': '#1f2937', 'border': '#111827'},
+        'Product': {'background': '#4b5563', 'border': '#374151'},
+        'Price': {'background': '#6b7280', 'border': '#4b5563'},
+        'Specification': {'background': '#9ca3af', 'border': '#6b7280'},
+        'Review': {'background': '#d1d5db', 'border': '#9ca3af'}
+    }
+    
+    # Special color for Honeywell (center node)
+    honeywell_color = {'background': '#111827', 'border': '#030712'}
+    
+    for node in nodes:
+        group = node['group']
+        # Only treat the Honeywell COMPANY as the fixed center node to avoid overlap
+        label_text = node.get('label', '') or ''
+        is_honeywell = (group == 'Company') and ('Honeywell' in label_text)
+        
+        # Uniform node sizing for readability
+        size = 50 if is_honeywell else 35
+        color = honeywell_color if is_honeywell else colors.get(group, {'background': '#6b7280', 'border': '#9ca3af'})
+        font_cfg = {'size': 18, 'color': '#1f2937', 'bold': True} if is_honeywell else {'size': 13, 'color': '#1f2937'}
+        
+        net.add_node(
+            node['id'],
+            label=node['label'],
+            title=node['title'],
+            color=color,
+            group=group,
+            size=size,
+            font=font_cfg,
+            x=0 if is_honeywell else None,
+            y=0 if is_honeywell else None,
+            fixed={'x': True, 'y': True} if is_honeywell else None,
+            physics=not is_honeywell
+        )
+    
+    for edge in edges:
+        net.add_edge(
+            edge['from'],
+            edge['to'],
+            label=edge['label'].replace('_', ' '),
+            title=edge['title']
+        )
+    
+    return net
+
+
+def create_comparison_table(products_df: pd.DataFrame, selected_products: List[str]) -> pd.DataFrame:
+    """Create a head-to-head comparison table for selected products."""
+    if not selected_products or len(selected_products) < 2:
+        return pd.DataFrame()
+    
+    # Filter to selected products
+    comparison_df = products_df[products_df['Product'].isin(selected_products)].copy()
+    
+    if comparison_df.empty:
+        return pd.DataFrame()
+    
+    # Transpose for comparison view
+    comparison_df = comparison_df.set_index('Product').T
+    
+    return comparison_df
+
+
+# =============================================================================
+# MAIN APP
+# =============================================================================
+
+def main():
+    # Initialize session state
+    if 'selected_items' not in st.session_state:
+        st.session_state.selected_items = set()
+    if 'verified_relationships' not in st.session_state:
+        st.session_state.verified_relationships = set()
+    if 'rejected_relationships' not in st.session_state:
+        st.session_state.rejected_relationships = set()
+    if 'selected_products' not in st.session_state:
+        st.session_state.selected_products = []
+    
+    # === HEADER ===
+    st.markdown("""
+    <div class="main-header">
+        <h1>🎯 Competitive Intelligence Database</h1>
+        <p>Competitive Intelligence for Pressure Transmitter Markets | Powered by Agentic AI</p>
+    </div>
+    """, unsafe_allow_html=True)
+        
+    # === SIDEBAR ===
+    with st.sidebar:
+        st.markdown("### 🤖 Agentic Pipeline")
+        st.markdown("Run the AI agent to collect competitive intelligence.")
+        
+        target_product = st.text_input("Target Product", "SmartLine ST700")
+        max_competitors = st.slider("Max Competitors", 1, 10, 5)
+        max_iterations = st.slider("Max Iterations", 10, 50, 30)
+        
+        if st.button("🚀 Run Agentic Pipeline", use_container_width=True):
+            with st.spinner("🤖 Agent is researching..."):
+                try:
+                    from src.pipeline.graph_builder import run_agentic_mode
+                    result = run_agentic_mode(
+                        target_product=target_product,
+                        max_competitors=max_competitors,
+                        max_iterations=max_iterations
+                    )
+                    st.success("✅ Pipeline complete!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+        
+        st.markdown("---")
+        st.markdown("### 📊 Quick Stats")
+        
+        try:
+            stats = fetch_graph_stats()
+            for label, count in stats.get('nodes', {}).items():
+                st.metric(label, count)
+        except:
+            st.info("Connect to Neo4j to see stats")
+    
+    # === MAIN CONTENT TABS ===
+    tabs = st.tabs([
+        "📊 Knowledge Graph", 
+        "🔄 Pipeline Architecture",
+        "📋 Specification Table", 
+        "🔍 Compare Products",
+        "✅ Verify Data"
+    ])
+    
+    # === TAB 1: KNOWLEDGE GRAPH ===
+    with tabs[0]:
+        st.markdown("""
+        <div class="section-header">
+            <h2>📊 Knowledge Graph Visualization</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        try:
+            nodes, edges = fetch_graph_data()
+            
+            if nodes and edges:
+                # Metrics row
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    companies = len([n for n in nodes if n['group'] == 'Company'])
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-value">{companies}</div>
+                        <div class="metric-label">Companies</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    products = len([n for n in nodes if n['group'] == 'Product'])
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-value">{products}</div>
+                        <div class="metric-label">Products</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col3:
+                    specs = len([n for n in nodes if n['group'] == 'Specification'])
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-value">{specs}</div>
+                        <div class="metric-label">Specifications</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col4:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-value">{len(edges)}</div>
+                        <div class="metric-label">Relationships</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+            
+                # Legend
+                with st.expander("🎨 Graph Legend & Controls"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("""
+                        **Node Types:**
+                        - 🔵 **Company** - Competitors
+                        - 🟡 **Product** - Product models
+                        - 🟢 **Price** - Pricing data
+                        - 🔴 **Specification** - Technical specs
+                        - 🟣 **Review** - Customer reviews
+                        """)
+                    with col2:
+                        st.markdown("""
+                        **Controls:**
+                        - **Drag** nodes to rearrange
+                        - **Scroll** to zoom
+                        - **Click** to highlight connections
+                        - **Double-click** to focus
+                        """)
+                
+                # Render graph
+                net = create_network_graph(nodes, edges)
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.html', mode='w', encoding='utf-8') as f:
+                    net.save_graph(f.name)
+                    with open(f.name, 'r', encoding='utf-8') as f2:
+                        html_content = f2.read()
+                
+                components.html(html_content, height=670, scrolling=False)
+            
+            else:
+                st.info("📊 No graph data yet. Run the pipeline to generate data.")
+    
+        except Exception as e:
+            st.warning(f"⚠️ Could not load graph: {str(e)}")
+    
+    # === TAB 2: PIPELINE ARCHITECTURE ===
+    with tabs[1]:
+        st.markdown("""
+        <div class="section-header">
+            <h2>🔄 LangGraph Agentic Pipeline</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("This shows the architecture of the agentic AI pipeline that collects competitive intelligence.")
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown("### Pipeline Visualization")
+            
+            # Try to load and display the pipeline image
+            try:
+                from pathlib import Path
+                pipeline_img_path = Path("langgraph_agentic_pipeline.png")
+                
+                if pipeline_img_path.exists():
+                    st.image(str(pipeline_img_path), caption="LangGraph Agentic Pipeline", use_container_width=True)
+                else:
+                    # Generate if doesn't exist
+                    try:
+                        from src.agents.langgraph_agent import build_agentic_graph
+                        app = build_agentic_graph()
+                        graph = app.get_graph()
+                        png_bytes = graph.draw_mermaid_png()
+                        with open("langgraph_agentic_pipeline.png", "wb") as f:
+                            f.write(png_bytes)
+                        st.image("langgraph_agentic_pipeline.png", caption="LangGraph Agentic Pipeline", use_container_width=True)
+                    except Exception as e:
+                        st.info(f"Pipeline visualization not available: {e}")
+            except Exception as e:
+                st.warning(f"Could not load pipeline image: {e}")
+        
+        with col2:
+            st.markdown("### How It Works")
+            
+            st.markdown("""
+            **The LangGraph Agent Loop:**
+            
+            ```
+            __start__
+                │
+                ▼
+            ┌─────────┐
+            │  agent  │◄────────┐
+            │ (LLM)   │         │
+            └────┬────┘         │
+                 │              │
+                 ▼              │
+            ┌─────────┐         │
+            │  tools  │─────────┘
+            └────┬────┘
+                 │ (when complete)
+                 ▼
+            ┌─────────┐
+            │ __end__ │ → Neo4j
+            └─────────┘
+            ```
+            """)
+            
+        st.markdown("---")
+                
+        st.markdown("### Available Tools")
+        
+        tools_info = {
+            "🔍 search_web": "Search for competitors, products, specs",
+            "📄 extract_page": "Get full content from a URL",
+            "🏢 save_competitor": "Store a competitor company",
+            "📦 save_product": "Store a product model",
+            "📊 save_specification": "Store a technical spec",
+            "💰 save_price": "Store a price",
+            "📝 save_review": "Store a customer review",
+            "✅ mark_complete": "Signal mission complete",
+        }
+        
+        for tool, desc in tools_info.items():
+            st.markdown(f"- **{tool}**: {desc}")
+    
+        st.markdown("---")
+        
+        # Show agent decision flow
+        st.markdown("### Agent Decision Flow")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown("""
+            <div style="background: #fee2e2; padding: 1rem; border-radius: 8px; text-align: center;">
+                <strong>1️⃣ OBSERVE</strong><br>
+                <small>Check current state</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("""
+            <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; text-align: center;">
+                <strong>2️⃣ THINK</strong><br>
+                <small>What's missing?</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("""
+            <div style="background: #d1fae5; padding: 1rem; border-radius: 8px; text-align: center;">
+                <strong>3️⃣ ACT</strong><br>
+                <small>Call a tool</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown("""
+            <div style="background: #dbeafe; padding: 1rem; border-radius: 8px; text-align: center;">
+                <strong>4️⃣ UPDATE</strong><br>
+                <small>Save to state</small>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # === TAB 3: SPECIFICATION TABLE ===
+    with tabs[2]:
+        st.markdown("""
+        <div class="section-header">
+            <h2>📋 Product Specification Database</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("View all products with their extracted specifications. Click column headers to sort.")
+        
+        try:
+            products_df = fetch_all_products_with_specs()
+            
+            if not products_df.empty:
+                # Column configuration
+                column_order = ['Company', 'Product', 'Price', 'Review Count', 'Review Snippet', 'Sources']
+                spec_columns = [col for col in products_df.columns if col not in column_order]
+                column_order.extend(sorted(spec_columns))
+                
+                # Reorder columns
+                display_df = products_df[[col for col in column_order if col in products_df.columns]]
+                
+                # Show count
+                st.markdown(f"**{len(display_df)} products** with specifications")
+                
+                # Filter options
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    company_filter = st.multiselect(
+                        "Filter by Company",
+                        options=sorted(display_df['Company'].unique()),
+                        default=[]
+                    )
+                
+                with col2:
+                    search = st.text_input("🔍 Search products", "")
+                
+                # Apply filters
+                filtered_df = display_df.copy()
+                if company_filter:
+                    filtered_df = filtered_df[filtered_df['Company'].isin(company_filter)]
+                if search:
+                    mask = filtered_df.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
+                    filtered_df = filtered_df[mask]
+                
+                # Display table
+                st.dataframe(
+                    filtered_df,
+                    use_container_width=True,
+                    height=500,
+                    hide_index=True,
+                    column_config={
+                        "Company": st.column_config.TextColumn("Company", width="medium"),
+                        "Product": st.column_config.TextColumn("Product", width="medium"),
+                        "Price": st.column_config.TextColumn("Price", width="small"),
+                    }
+                )
+                
+                # Export option
+                if st.button("📥 Export to CSV"):
+                    csv = filtered_df.to_csv(index=False)
+                    st.download_button(
+                        label="Download CSV",
+                        data=csv,
+                        file_name="product_specifications.csv",
+                        mime="text/csv"
+                    )
+            else:
+                st.info("📋 No products found. Run the pipeline to extract product data.")
+        
+        except Exception as e:
+            st.warning(f"⚠️ Could not load specifications: {str(e)}")
+    
+    # === TAB 3: PRODUCT COMPARISON ===
+    with tabs[3]:
+        st.markdown("""
+        <div class="section-header">
+            <h2>🔍 Head-to-Head Product Comparison</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("Select 2 or more products to compare their specifications side-by-side.")
+        
+        try:
+            products_df = fetch_all_products_with_specs()
+            
+            if not products_df.empty:
+                # Product selection
+                all_products = products_df['Product'].unique().tolist()
+                
+                selected = st.multiselect(
+                    "Select products to compare",
+                    options=all_products,
+                    default=all_products[:2] if len(all_products) >= 2 else all_products,
+                    max_selections=5
+                )
+                
+                if len(selected) >= 2:
+                    # Create comparison view
+                    comparison_df = products_df[products_df['Product'].isin(selected)].copy()
+                    
+                    # Transpose for side-by-side view
+                    comparison_df = comparison_df.set_index('Product')
+                    if 'Sources' in comparison_df.columns:
+                        comparison_df = comparison_df.drop(columns=['Sources'])
+                    comparison_df = comparison_df.T
+                    
+                    st.markdown("### 📊 Comparison Matrix")
+                    
+                    # Display with highlighting
+                    st.dataframe(
+                        comparison_df,
+                        use_container_width=True,
+                        height=600,
+                    )
+                    
+                    # Ontology-based analysis
+                    st.markdown("### 🎯 Key Insights")
+                    
+                    insights = []
+                    
+                    # Check for important specs
+                    for spec_name, spec_def in PRESSURE_TRANSMITTER_ONTOLOGY.items():
+                        if spec_def.importance >= 4:  # High importance specs
+                            display_name = spec_name.replace('_', ' ').title()
+                            if display_name in comparison_df.index:
+                                values = comparison_df.loc[display_name].dropna()
+                                if len(values) > 0:
+                                    unique_values = values.unique()
+                                    if len(unique_values) > 1:
+                                        insights.append(f"**{display_name}** varies: {', '.join(str(v) for v in unique_values)}")
+                    
+                    if insights:
+                        for insight in insights:
+                            st.markdown(f"- {insight}")
+                    else:
+                        st.info("No significant differences detected in high-priority specifications.")
+                
+                elif len(selected) == 1:
+                    st.info("Select at least one more product to compare.")
+                else:
+                    st.info("Select products from the list above to start comparing.")
+            
+            else:
+                st.info("🔍 No products available for comparison. Run the pipeline first.")
+        
+        except Exception as e:
+            st.warning(f"⚠️ Could not load comparison data: {str(e)}")
+    
+    # === TAB 4: DATA VERIFICATION ===
+    with tabs[4]:
+        st.markdown("""
+        <div class="section-header">
+            <h2>✅ Human-in-the-Loop Verification</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("Review extracted data and approve or reject based on evidence quality.")
+        
+        try:
+            all_relationships = fetch_all_relationships()
+            
+            pending_relationships = [
+                r for r in all_relationships 
+                if r['rel_id'] not in st.session_state.verified_relationships 
+                and r['rel_id'] not in st.session_state.rejected_relationships
+            ]
+            
+            # Stats
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total", len(all_relationships))
+            with col2:
+                st.metric("Verified ✅", len(st.session_state.verified_relationships))
+            with col3:
+                st.metric("Rejected ❌", len(st.session_state.rejected_relationships))
+            with col4:
+                st.metric("Pending", len(pending_relationships))
+            
+            st.markdown("---")
+            
+            if not pending_relationships:
+                st.success("🎉 All relationships have been verified!")
+                if st.button("🔄 Reset Verification"):
+                    st.session_state.verified_relationships = set()
+                    st.session_state.rejected_relationships = set()
+                    st.session_state.selected_items = set()
+                    st.rerun()
+            else:
+                # Batch actions
+                col1, col2, col3, col4 = st.columns([2, 2, 1, 2])
+                
+                with col1:
+                    if st.button(f"✅ Approve Selected ({len(st.session_state.selected_items)})", disabled=len(st.session_state.selected_items) == 0):
+                        st.session_state.verified_relationships.update(st.session_state.selected_items)
+                        st.session_state.selected_items = set()
+                        st.rerun()
+                
+                with col2:
+                    if st.button(f"❌ Reject Selected ({len(st.session_state.selected_items)})", disabled=len(st.session_state.selected_items) == 0):
+                        delete_relationships(list(st.session_state.selected_items))
+                        st.session_state.rejected_relationships.update(st.session_state.selected_items)
+                        st.session_state.selected_items = set()
+                        st.rerun()
+                
+                with col3:
+                    if st.button("☑️ Select All"):
+                        st.session_state.selected_items = {r['rel_id'] for r in pending_relationships}
+                        st.rerun()
+                
+                with col4:
+                    filter_type = st.selectbox(
+                        "Filter",
+                        ["All", "COMPETES_WITH", "OFFERS_PRODUCT", "HAS_PRICE", "HAS_SPEC", "HAS_REVIEW"],
+                        label_visibility="collapsed"
+                    )
+                
+                st.markdown("---")
+                
+                # Filter relationships
+                if filter_type != "All":
+                    filtered = [r for r in pending_relationships if r['relationship_type'] == filter_type]
+                else:
+                    filtered = pending_relationships
+                
+                # Display relationships
+                for rel in filtered[:20]:  # Limit to 20 for performance
+                    rel_id = rel['rel_id']
+                    is_selected = rel_id in st.session_state.selected_items
+                    
+                    col1, col2, col3 = st.columns([0.5, 7, 2])
+                    
+                    with col1:
+                        if st.checkbox("Select", value=is_selected, key=f"sel_{rel_id}", label_visibility="collapsed"):
+                            st.session_state.selected_items.add(rel_id)
+                        elif rel_id in st.session_state.selected_items:
+                            st.session_state.selected_items.remove(rel_id)
+                    
+                    with col2:
+                        st.markdown(f"**{rel['source_name']}** → {rel['relationship_type'].replace('_', ' ')} → **{rel['target_name']}**")
+                    
+                    with col3:
+                        if rel['source_urls']:
+                            domain = rel['source_urls'][0].split('/')[2] if len(rel['source_urls'][0].split('/')) > 2 else 'source'
+                            st.caption(f"📎 {domain[:20]}")
+                    
+                    # Evidence expander
+                    with st.expander("📄 View Evidence"):
+                        # Show stored snippet if present
+                        if rel.get('snippet'):
+                            st.write("**Stored snippet:**")
+                            st.info(rel['snippet'])
+                        
+                        # Show source URLs
+                        if rel.get('source_urls'):
+                            for u in rel['source_urls']:
+                                if _is_valid_http_url(u):
+                                    st.markdown(f"- [Source]({u})")
+                        
+                        # Try to fetch best matching chunk from Chroma
+                        chunk = find_best_evidence_for_relationship(
+                            source=rel['source_name'],
+                            relationship=rel['relationship_type'],
+                            target=rel['target_name'],
+                            evidence_ids=rel['evidence_ids']
+                        )
+                        
+                        if chunk:
+                            distance = chunk.get('distance', 999)
+                            confidence = "🟢 High" if distance < 0.5 else "🟡 Medium" if distance < 1.0 else "🟠 Low"
+                            st.write("**Vector-retrieved evidence:**")
+                            st.info(chunk['document'][:500])
+                            st.caption(f"Confidence: {confidence} (distance: {distance:.3f})")
+                            
+                            chunk_url = chunk['metadata'].get('source_url')
+                            if _is_valid_http_url(chunk_url):
+                                st.markdown(f"[View Source]({chunk_url})")
+                        else:
+                            st.error("⚠️ No supporting evidence found. Consider rejecting.")
+                
+            st.markdown("---")
+        
+        except Exception as e:
+            st.warning(f"⚠️ Could not load verification data: {str(e)}")
+
+
+if __name__ == "__main__":
+    main()
