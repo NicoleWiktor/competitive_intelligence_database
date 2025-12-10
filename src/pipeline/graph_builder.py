@@ -129,6 +129,7 @@ def run_agentic_mode(
     target_company: str = "Honeywell",
     max_competitors: int = 5,
     max_iterations: int = 30,
+    **kwargs,
 ) -> Dict[str, Any]:
     """
     Run the AGENTIC mode using LangGraph agent pipeline.
@@ -143,21 +144,32 @@ def run_agentic_mode(
     
     Graph structure:
         __start__ → agent → router → tools → agent (loop) → __end__
+    
+    Args:
+        incremental: If True, don't clear the database - add to existing data
     """
     from src.agents.langgraph_agent import run_langgraph_agent
     from src.pipeline.neo4j_write_node import run_neo4j
     from src.pipeline.cypher_node import to_merge_cypher
     
+    # Check for incremental flag
+    incremental = kwargs.get("incremental", False)
+    
     print("="*80)
     print("🤖 STARTING LANGGRAPH AGENTIC MODE")
     print(f"Target: {target_company} {target_product}")
     print(f"Looking for {max_competitors} competitors")
+    if incremental:
+        print("📥 INCREMENTAL MODE - Adding to existing data")
     print("="*80)
     
-    # Reset Neo4j database before running
-    print("\n🗑️  Resetting Neo4j database...")
-    reset_neo4j()
-    print("✓ Database cleared\n")
+    # Reset Neo4j database before running (unless incremental mode)
+    if not incremental:
+        print("\n🗑️  Resetting Neo4j database...")
+        reset_neo4j()
+        print("✓ Database cleared\n")
+    else:
+        print("\n📥 Keeping existing database data (incremental mode)\n")
     
     # Run the LangGraph agent
     data = run_langgraph_agent(
@@ -243,6 +255,11 @@ Examples:
         default="SmartLine ST700",
         help="Target Honeywell product (default: SmartLine ST700)"
     )
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Incremental mode: add to existing data instead of clearing the database"
+    )
     
     args = parser.parse_args()
     
@@ -251,6 +268,7 @@ Examples:
             target_product=args.product,
             max_competitors=args.competitors,
             max_iterations=args.iterations,
+            incremental=args.incremental,
         )
     else:
         result = run_pipeline_mode(

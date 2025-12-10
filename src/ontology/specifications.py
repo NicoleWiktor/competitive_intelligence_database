@@ -3,9 +3,11 @@ Specification Ontology - Defines the canonical schema for pressure transmitter s
 
 This module handles:
 1. WHAT specs matter (the ontology definition)
-2. HOW to normalize units (psi ↔ bar, °C ↔ °F, mm ↔ inches)
+2. HOW to normalize units (psi ↔ bar ↔ kPa, °C ↔ °F, mm ↔ inches)
 3. HOW to parse raw spec strings into structured data
 4. HOW to enable head-to-head comparisons
+5. FUZZY MATCHING with aliases and similarity scoring
+6. AI-DERIVED ATTRIBUTES for specs not in the ontology
 
 Key Design Decision (from boss's question):
 "Will that be handled by a human defining what's important or will the AI try to identify those?"
@@ -13,14 +15,16 @@ Key Design Decision (from boss's question):
 ANSWER: Hybrid approach
 - Human defines the ONTOLOGY (what specs exist, valid units, how to normalize)
 - AI extracts and maps data ONTO the ontology
-- This ensures consistent head-to-head comparison capability
+- AI can propose NEW attributes tagged as AI_DERIVED_ATTRIBUTE
+- Fuzzy matching allows partial matches with similarity > 0.6
 """
 
 from __future__ import annotations
 import re
-from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass, field
 from enum import Enum
+from difflib import SequenceMatcher
 
 
 # =============================================================================
@@ -30,17 +34,32 @@ from enum import Enum
 # Pressure conversions (all to psi as canonical)
 PRESSURE_TO_PSI = {
     "psi": 1.0,
+    "psig": 1.0,
+    "psia": 1.0,
     "bar": 14.5038,
+    "bara": 14.5038,
+    "barg": 14.5038,
     "mbar": 0.0145038,
     "kpa": 0.145038,
     "mpa": 145.038,
     "pa": 0.000145038,
     "kgcm2": 14.2233,  # kg/cm²
+    "kg/cm2": 14.2233,
+    "kg/cm²": 14.2233,
     "atm": 14.6959,
     "mmhg": 0.0193368,
     "inhg": 0.491154,
     "inh2o": 0.0361273,  # inches of water
     "mmh2o": 0.00142233,
+    "torr": 0.0193368,
+}
+
+# Reverse mapping for display
+PSI_TO_OTHER = {
+    "bar": 1 / 14.5038,
+    "kpa": 1 / 0.145038,
+    "mpa": 1 / 145.038,
+    "mbar": 1 / 0.0145038,
 }
 
 # Temperature conversions (all to Celsius as canonical)
@@ -57,9 +76,13 @@ TEMP_CONVERTERS = {
     "c": celsius_to_celsius,
     "celsius": celsius_to_celsius,
     "°c": celsius_to_celsius,
+    "deg c": celsius_to_celsius,
+    "degc": celsius_to_celsius,
     "f": fahrenheit_to_celsius,
     "fahrenheit": fahrenheit_to_celsius,
     "°f": fahrenheit_to_celsius,
+    "deg f": fahrenheit_to_celsius,
+    "degf": fahrenheit_to_celsius,
     "k": kelvin_to_celsius,
     "kelvin": kelvin_to_celsius,
 }
@@ -72,6 +95,7 @@ LENGTH_TO_MM = {
     "in": 25.4,
     "inch": 25.4,
     "inches": 25.4,
+    '"': 25.4,
     "ft": 304.8,
     "feet": 304.8,
 }
@@ -79,12 +103,15 @@ LENGTH_TO_MM = {
 # Time conversions (all to ms as canonical)
 TIME_TO_MS = {
     "ms": 1.0,
+    "millisecond": 1.0,
+    "milliseconds": 1.0,
     "s": 1000.0,
     "sec": 1000.0,
     "second": 1000.0,
     "seconds": 1000.0,
     "min": 60000.0,
     "minute": 60000.0,
+    "minutes": 60000.0,
 }
 
 
@@ -111,11 +138,36 @@ class SpecDefinition:
     canonical_unit: Optional[str]     # Unit for normalization (e.g., "psi")
     allowed_values: Optional[List[str]] = None  # For ENUM types
     extraction_hints: List[str] = None  # Regex/keywords to look for
+    aliases: List[str] = None         # Alternative names for fuzzy matching
     importance: int = 1               # 1-5 priority for comparisons
     
     def __post_init__(self):
         if self.extraction_hints is None:
             self.extraction_hints = []
+        if self.aliases is None:
+            self.aliases = []
+
+
+@dataclass
+class NormalizedValue:
+    """A normalized specification value with both raw and converted forms."""
+    raw_value: str                    # Original extracted text
+    raw_unit: str                     # Original unit
+    normalized_value: Union[float, Tuple[float, float], str, List[str]]  # Converted value
+    normalized_unit: str              # Canonical unit
+    confidence: float = 1.0           # Confidence in the conversion
+
+
+@dataclass 
+class AIExtractedSpec:
+    """A specification discovered by AI that may not be in the ontology."""
+    name: str                         # Extracted name
+    value: str                        # Extracted value
+    raw_text: str                     # Source text snippet
+    mapped_ontology_key: Optional[str] = None  # If mapped to ontology
+    similarity_score: float = 0.0     # Fuzzy match score
+    is_ai_derived: bool = False       # True if not in ontology
+    source_url: str = ""              # Source URL
 
 
 # =============================================================================
@@ -130,10 +182,17 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         spec_type=SpecType.RANGE,
         canonical_unit="psi",
         extraction_hints=[
-            r"(\d+\.?\d*)\s*(?:to|-|~)\s*(\d+\.?\d*)\s*(psi|bar|mbar|kpa|mpa)",
-            r"range[:\s]+(\d+\.?\d*)\s*(?:to|-)\s*(\d+\.?\d*)",
+            r"(\d+\.?\d*)\s*(?:to|-|–|~)\s*(\d+\.?\d*)\s*(psi|bar|mbar|kpa|mpa)",
+            r"range[:\s]+(\d+\.?\d*)\s*(?:to|-|–)\s*(\d+\.?\d*)",
             r"pressure\s+range",
             r"measuring\s+range",
+            r"span[:\s]+",
+            r"turndown",
+        ],
+        aliases=[
+            "measuring range", "pressure span", "measurement range", 
+            "operating range", "span", "pressure scale", "range of measurement",
+            "full scale range", "fs range", "measurement span"
         ],
         importance=5,
     ),
@@ -147,6 +206,13 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
             r"accuracy[:\s]+[±]?(\d+\.?\d*)\s*%",
             r"[±](\d+\.?\d*)\s*%\s*(?:fs|full\s*scale|span)",
             r"(\d+\.?\d*)\s*%\s*accuracy",
+            r"reference\s+accuracy",
+            r"total\s+accuracy",
+        ],
+        aliases=[
+            "reference accuracy", "total accuracy", "measurement accuracy",
+            "typical accuracy", "best accuracy", "standard accuracy",
+            "accuracy class", "error", "measurement error", "max error"
         ],
         importance=5,
     ),
@@ -160,6 +226,10 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
             r"repeatability[:\s]+[±]?(\d+\.?\d*)\s*%",
             r"[±](\d+\.?\d*)\s*%\s*repeatability",
         ],
+        aliases=[
+            "repeat accuracy", "reproducibility", "precision",
+            "repeat precision", "measurement repeatability"
+        ],
         importance=4,
     ),
     
@@ -172,6 +242,11 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
             r"stability[:\s]+(.+?)(?:\n|$)",
             r"long.?term\s+stability",
             r"drift[:\s]+(.+?)(?:\n|$)",
+            r"(\d+\.?\d*)\s*%\s*(?:per|\/)\s*year",
+        ],
+        aliases=[
+            "long term stability", "drift", "zero drift", "span drift",
+            "annual drift", "yearly stability", "long-term drift"
         ],
         importance=4,
     ),
@@ -184,6 +259,45 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         extraction_hints=[
             r"response\s+time[:\s]+(\d+\.?\d*)\s*(ms|s|sec)",
             r"(\d+\.?\d*)\s*(ms|s)\s+response",
+            r"update\s+time",
+            r"settling\s+time",
+        ],
+        aliases=[
+            "update time", "settling time", "reaction time", 
+            "time constant", "step response", "dynamic response"
+        ],
+        importance=3,
+    ),
+    
+    "overpressure": SpecDefinition(
+        name="overpressure",
+        display_name="Overpressure Limit",
+        spec_type=SpecType.VALUE,
+        canonical_unit="psi",
+        extraction_hints=[
+            r"overpressure[:\s]+(\d+\.?\d*)\s*(psi|bar|mpa)",
+            r"burst\s+pressure",
+            r"max(?:imum)?\s+pressure",
+            r"proof\s+pressure",
+        ],
+        aliases=[
+            "burst pressure", "maximum pressure", "proof pressure",
+            "overload", "pressure limit", "static pressure limit"
+        ],
+        importance=4,
+    ),
+    
+    "turn_down_ratio": SpecDefinition(
+        name="turn_down_ratio",
+        display_name="Turn Down Ratio",
+        spec_type=SpecType.TEXT,
+        canonical_unit=None,
+        extraction_hints=[
+            r"turn.?down[:\s]+(\d+)[:\s]*1",
+            r"rangeability[:\s]+(\d+)",
+        ],
+        aliases=[
+            "rangeability", "turndown", "range ratio", "span ratio"
         ],
         importance=3,
     ),
@@ -197,12 +311,19 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         allowed_values=[
             "4-20mA", "0-20mA", "0-10V", "1-5V", "0-5V",
             "HART", "Profibus PA", "Foundation Fieldbus",
-            "Modbus RTU", "Modbus TCP", "IO-Link",
+            "Modbus RTU", "Modbus TCP", "IO-Link", "WirelessHART",
+            "Bluetooth", "Digital", "Analog"
         ],
         extraction_hints=[
             r"output[:\s]+(4-20\s*ma|0-10\s*v|hart|profibus|modbus)",
             r"(4-20\s*ma|0-20\s*ma)",
             r"(hart|profibus|foundation\s*fieldbus|modbus)",
+            r"signal[:\s]+(4-20|0-10|1-5)",
+        ],
+        aliases=[
+            "signal output", "output type", "communication protocol",
+            "protocol", "output format", "electrical output",
+            "analog output", "digital output", "fieldbus"
         ],
         importance=5,
     ),
@@ -213,9 +334,14 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         spec_type=SpecType.RANGE,
         canonical_unit="V DC",
         extraction_hints=[
-            r"supply[:\s]+(\d+\.?\d*)\s*(?:to|-)\s*(\d+\.?\d*)\s*v",
+            r"supply[:\s]+(\d+\.?\d*)\s*(?:to|-|–)\s*(\d+\.?\d*)\s*v",
             r"power[:\s]+(\d+\.?\d*)\s*v\s*dc",
             r"(\d+)\s*v\s*dc",
+            r"voltage[:\s]+(\d+)",
+        ],
+        aliases=[
+            "power supply", "operating voltage", "input voltage",
+            "excitation voltage", "dc supply", "loop voltage"
         ],
         importance=3,
     ),
@@ -228,6 +354,25 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         extraction_hints=[
             r"load[:\s]+(\d+)\s*(?:ohm|Ω)",
             r"(\d+)\s*(?:ohm|Ω)\s+max",
+            r"loop\s+resistance",
+        ],
+        aliases=[
+            "loop resistance", "max load", "load impedance"
+        ],
+        importance=2,
+    ),
+    
+    "power_consumption": SpecDefinition(
+        name="power_consumption",
+        display_name="Power Consumption",
+        spec_type=SpecType.VALUE,
+        canonical_unit="W",
+        extraction_hints=[
+            r"power\s+consumption[:\s]+(\d+\.?\d*)\s*(w|mw)",
+            r"(\d+\.?\d*)\s*(w|mw)\s+(?:max|typical)",
+        ],
+        aliases=[
+            "power draw", "current consumption", "energy consumption"
         ],
         importance=2,
     ),
@@ -243,12 +388,18 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
             "G1/4", "G1/2", "G3/4", "G1",
             "M20x1.5", "M14x1.5",
             "Tri-Clamp", "Flange", "DIN", "JIS",
+            "SAE", "BSP", "ISO"
         ],
         extraction_hints=[
             r"(1/4|1/2|3/4|1)\s*(npt|bsp)",
             r"(g1/4|g1/2|m20|m14)",
             r"process\s+connection[:\s]+(.+?)(?:\n|,|$)",
             r"(tri.?clamp|flange)",
+            r"thread[:\s]+(.+?)(?:\n|$)",
+        ],
+        aliases=[
+            "connection type", "fitting", "port", "thread type",
+            "pressure port", "mounting", "process fitting"
         ],
         importance=4,
     ),
@@ -263,12 +414,18 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
             "Hastelloy C-276", "Monel 400",
             "Titanium", "Tantalum",
             "PTFE", "Viton", "EPDM", "FKM",
+            "Ceramic", "Inconel", "Duplex"
         ],
         extraction_hints=[
             r"wetted[:\s]+(.+?)(?:\n|$)",
             r"material[:\s]+(316|hastelloy|monel|titanium)",
             r"(stainless\s+steel|ss\s*316|hastelloy)",
             r"diaphragm[:\s]+(316|hastelloy|ceramic)",
+            r"sensor\s+material",
+        ],
+        aliases=[
+            "wetted parts", "media contact materials", "diaphragm material",
+            "sensor material", "process wetted parts", "materials of construction"
         ],
         importance=4,
     ),
@@ -278,12 +435,32 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         display_name="Housing Material",
         spec_type=SpecType.ENUM,
         canonical_unit=None,
-        allowed_values=["Aluminum", "316 SS", "Plastic", "Die-cast Aluminum"],
+        allowed_values=["Aluminum", "316 SS", "Plastic", "Die-cast Aluminum", "Stainless Steel"],
         extraction_hints=[
             r"housing[:\s]+(.+?)(?:\n|$)",
             r"enclosure[:\s]+(aluminum|stainless|plastic)",
+            r"case[:\s]+(aluminum|steel|plastic)",
+        ],
+        aliases=[
+            "enclosure material", "case material", "body material"
         ],
         importance=2,
+    ),
+    
+    "diaphragm_material": SpecDefinition(
+        name="diaphragm_material",
+        display_name="Diaphragm Material",
+        spec_type=SpecType.ENUM,
+        canonical_unit=None,
+        allowed_values=["316L SS", "Hastelloy C-276", "Monel", "Titanium", "Ceramic", "Inconel"],
+        extraction_hints=[
+            r"diaphragm[:\s]+(316|hastelloy|monel|titanium|ceramic)",
+            r"sensing\s+element[:\s]+(.+?)(?:\n|$)",
+        ],
+        aliases=[
+            "sensing element", "pressure element", "membrane material"
+        ],
+        importance=4,
     ),
     
     # === ENVIRONMENTAL SPECIFICATIONS ===
@@ -293,9 +470,14 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         spec_type=SpecType.RANGE,
         canonical_unit="celsius",
         extraction_hints=[
-            r"operating\s+temp[:\s]+(-?\d+)\s*(?:to|~|-)\s*(-?\d+)\s*(°?[cf])",
-            r"ambient[:\s]+(-?\d+)\s*(?:to|-)\s*(-?\d+)",
-            r"(-40|–40)\s*(?:to|-)\s*(\d+)\s*(°?c)",
+            r"operating\s+temp[:\s]+(-?\d+)\s*(?:to|~|-|–)\s*(-?\d+)\s*(°?[cf])",
+            r"ambient[:\s]+(-?\d+)\s*(?:to|-|–)\s*(-?\d+)",
+            r"(-40|–40)\s*(?:to|-|–)\s*(\d+)\s*(°?c)",
+            r"temperature\s+range[:\s]+",
+        ],
+        aliases=[
+            "ambient temperature", "electronics temperature", 
+            "environmental temperature", "working temperature"
         ],
         importance=4,
     ),
@@ -306,11 +488,30 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         spec_type=SpecType.RANGE,
         canonical_unit="celsius",
         extraction_hints=[
-            r"process\s+temp[:\s]+(-?\d+)\s*(?:to|-)\s*(-?\d+)",
-            r"media\s+temp[:\s]+(-?\d+)\s*(?:to|-)\s*(-?\d+)",
+            r"process\s+temp[:\s]+(-?\d+)\s*(?:to|-|–)\s*(-?\d+)",
+            r"media\s+temp[:\s]+(-?\d+)\s*(?:to|-|–)\s*(-?\d+)",
             r"fluid\s+temp",
+            r"medium\s+temperature",
+        ],
+        aliases=[
+            "media temperature", "fluid temperature", "medium temperature",
+            "service temperature", "max process temperature"
         ],
         importance=4,
+    ),
+    
+    "storage_temp": SpecDefinition(
+        name="storage_temp",
+        display_name="Storage Temperature",
+        spec_type=SpecType.RANGE,
+        canonical_unit="celsius",
+        extraction_hints=[
+            r"storage\s+temp[:\s]+(-?\d+)\s*(?:to|-|–)\s*(-?\d+)",
+        ],
+        aliases=[
+            "storage range", "shelf temperature"
+        ],
+        importance=2,
     ),
     
     "ip_rating": SpecDefinition(
@@ -318,11 +519,16 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         display_name="IP/Ingress Protection Rating",
         spec_type=SpecType.ENUM,
         canonical_unit=None,
-        allowed_values=["IP65", "IP66", "IP67", "IP68", "IP69K", "NEMA 4X"],
+        allowed_values=["IP65", "IP66", "IP67", "IP68", "IP69K", "NEMA 4X", "NEMA 4", "NEMA 7"],
         extraction_hints=[
-            r"(ip\s*6[5-9]k?|ip\s*68|nema\s*4x?)",
+            r"(ip\s*6[5-9]k?|ip\s*68|nema\s*4x?|nema\s*7)",
             r"protection[:\s]+(ip\d+)",
             r"ingress[:\s]+(ip\d+)",
+            r"enclosure\s+rating",
+        ],
+        aliases=[
+            "protection rating", "ingress protection", "enclosure rating",
+            "nema rating", "environmental protection"
         ],
         importance=3,
     ),
@@ -333,9 +539,10 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         spec_type=SpecType.LIST,
         canonical_unit=None,
         allowed_values=[
-            "ATEX", "IECEx", "FM", "CSA",
+            "ATEX", "IECEx", "FM", "CSA", "UL",
             "Class I Div 1", "Class I Div 2",
             "Zone 0", "Zone 1", "Zone 2",
+            "Intrinsically Safe", "Explosion Proof"
         ],
         extraction_hints=[
             r"(atex|iecex|fm\s+approved|csa)",
@@ -343,6 +550,11 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
             r"(zone\s*[012])",
             r"explosion.?proof",
             r"intrinsically\s+safe",
+            r"hazardous\s+area",
+        ],
+        aliases=[
+            "ex certification", "explosion proof", "intrinsic safety",
+            "hazloc", "hazardous location", "atex certification"
         ],
         importance=4,
     ),
@@ -356,6 +568,11 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         extraction_hints=[
             r"(sil\s*[123])",
             r"safety\s+integrity\s+level",
+            r"iec\s*61508",
+            r"iec\s*61511",
+        ],
+        aliases=[
+            "safety integrity level", "functional safety", "sil certified"
         ],
         importance=4,
     ),
@@ -366,10 +583,14 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         display_name="Measurement Type",
         spec_type=SpecType.ENUM,
         canonical_unit=None,
-        allowed_values=["Gauge", "Absolute", "Differential", "Sealed Gauge"],
+        allowed_values=["Gauge", "Absolute", "Differential", "Sealed Gauge", "Compound"],
         extraction_hints=[
-            r"(gauge|absolute|differential|sealed)",
+            r"(gauge|absolute|differential|sealed|compound)",
             r"pressure\s+type[:\s]+(gauge|absolute|differential)",
+            r"measurement\s+type",
+        ],
+        aliases=[
+            "pressure type", "sensing type", "reference type"
         ],
         importance=5,
     ),
@@ -385,6 +606,9 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
             r"(\d+)\s*x\s*(\d+)\s*x\s*(\d+)\s*(mm|in)",
             r"size[:\s]+(.+?)(?:\n|$)",
         ],
+        aliases=[
+            "size", "physical dimensions", "overall dimensions"
+        ],
         importance=2,
     ),
     
@@ -396,47 +620,291 @@ PRESSURE_TRANSMITTER_ONTOLOGY: Dict[str, SpecDefinition] = {
         extraction_hints=[
             r"weight[:\s]+(\d+\.?\d*)\s*(g|kg|lb|oz)",
             r"(\d+\.?\d*)\s*(kg|g)\s+weight",
+            r"mass[:\s]+",
+        ],
+        aliases=[
+            "mass", "net weight", "product weight"
         ],
         importance=2,
+    ),
+    
+    # === CERTIFICATIONS ===
+    "certifications": SpecDefinition(
+        name="certifications",
+        display_name="Certifications",
+        spec_type=SpecType.LIST,
+        canonical_unit=None,
+        allowed_values=["CE", "UL", "CSA", "FM", "ATEX", "IECEx", "CRN", "PED", "CPA", "MID"],
+        extraction_hints=[
+            r"(ce|ul|csa|fm|ped|crn|cpa|mid)\s+(?:certified|approved|listed)",
+            r"certifications?[:\s]+(.+?)(?:\n|$)",
+            r"approvals?[:\s]+(.+?)(?:\n|$)",
+        ],
+        aliases=[
+            "approvals", "listings", "compliance", "standards"
+        ],
+        importance=3,
+    ),
+    
+    # === WARRANTY & LIFECYCLE ===
+    "warranty": SpecDefinition(
+        name="warranty",
+        display_name="Warranty",
+        spec_type=SpecType.TEXT,
+        canonical_unit=None,
+        extraction_hints=[
+            r"warranty[:\s]+(\d+)\s*(year|month)",
+            r"(\d+)\s*year\s+warranty",
+        ],
+        aliases=[
+            "guarantee", "product warranty"
+        ],
+        importance=2,
+    ),
+    
+    "mtbf": SpecDefinition(
+        name="mtbf",
+        display_name="MTBF (Mean Time Between Failures)",
+        spec_type=SpecType.VALUE,
+        canonical_unit="hours",
+        extraction_hints=[
+            r"mtbf[:\s]+(\d+\.?\d*)\s*(hours?|years?)",
+            r"mean\s+time\s+between\s+failures",
+        ],
+        aliases=[
+            "mean time between failures", "reliability", "service life"
+        ],
+        importance=3,
     ),
 }
 
 
 # =============================================================================
-# SPECIFICATION EXTRACTOR: AI-powered extraction onto the ontology
+# FUZZY MATCHING UTILITIES
 # =============================================================================
 
-@dataclass
-class ExtractedSpec:
-    """A specification value extracted from text and normalized."""
-    spec_name: str              # Ontology key (e.g., "pressure_range")
-    raw_value: str              # Original extracted text
-    normalized_value: Any       # Normalized for comparison
-    unit: Optional[str]         # Canonical unit
-    confidence: float           # 0-1 confidence score
-    source_text: str            # Text snippet where found
+def calculate_similarity(s1: str, s2: str) -> float:
+    """Calculate similarity ratio between two strings (0-1)."""
+    s1 = s1.lower().strip()
+    s2 = s2.lower().strip()
+    return SequenceMatcher(None, s1, s2).ratio()
+
+
+def find_best_ontology_match(
+    extracted_name: str,
+    threshold: float = 0.6
+) -> Tuple[Optional[str], float]:
+    """
+    Find the best matching ontology key for an extracted specification name.
     
+    Uses fuzzy matching with aliases to find the best match.
+    
+    Args:
+        extracted_name: The name extracted from the page
+        threshold: Minimum similarity score to consider a match (default 0.6)
+    
+    Returns:
+        Tuple of (ontology_key, similarity_score) or (None, 0.0) if no match
+    """
+    extracted_lower = extracted_name.lower().strip()
+    best_match = None
+    best_score = 0.0
+    
+    for key, spec_def in PRESSURE_TRANSMITTER_ONTOLOGY.items():
+        # Check exact match with key
+        if extracted_lower == key.replace("_", " "):
+            return (key, 1.0)
+        
+        # Check exact match with display name
+        if extracted_lower == spec_def.display_name.lower():
+            return (key, 1.0)
+        
+        # Check similarity with key
+        score = calculate_similarity(extracted_lower, key.replace("_", " "))
+        if score > best_score:
+            best_score = score
+            best_match = key
+        
+        # Check similarity with display name
+        score = calculate_similarity(extracted_lower, spec_def.display_name.lower())
+        if score > best_score:
+            best_score = score
+            best_match = key
+        
+        # Check against aliases
+        for alias in spec_def.aliases:
+            # Exact alias match
+            if extracted_lower == alias.lower():
+                return (key, 1.0)
+            
+            score = calculate_similarity(extracted_lower, alias.lower())
+            if score > best_score:
+                best_score = score
+                best_match = key
+    
+    if best_score >= threshold:
+        return (best_match, best_score)
+    
+    return (None, 0.0)
 
-def normalize_pressure(value: float, unit: str) -> float:
-    """Convert pressure to PSI (canonical unit)."""
-    unit_lower = unit.lower().replace(" ", "")
+
+def match_partial_phrase(text: str, spec_key: str) -> bool:
+    """
+    Check if text contains a partial match for any extraction hints or aliases.
+    
+    Args:
+        text: The text to search in
+        spec_key: The ontology key to check against
+    
+    Returns:
+        True if a partial match is found
+    """
+    if spec_key not in PRESSURE_TRANSMITTER_ONTOLOGY:
+        return False
+    
+    spec_def = PRESSURE_TRANSMITTER_ONTOLOGY[spec_key]
+    text_lower = text.lower()
+    
+    # Check extraction hints (these are regexes)
+    for hint in spec_def.extraction_hints:
+        try:
+            if re.search(hint, text_lower, re.IGNORECASE):
+                return True
+        except re.error:
+            # Treat as simple string match if regex fails
+            if hint.lower() in text_lower:
+                return True
+    
+    # Check aliases as partial matches
+    for alias in spec_def.aliases:
+        if alias.lower() in text_lower:
+            return True
+    
+    # Check display name
+    if spec_def.display_name.lower() in text_lower:
+        return True
+    
+    return False
+
+
+# =============================================================================
+# UNIT NORMALIZATION FUNCTIONS
+# =============================================================================
+
+def normalize_pressure(value: float, unit: str) -> NormalizedValue:
+    """Convert pressure to PSI (canonical unit) and return both raw and normalized."""
+    unit_lower = unit.lower().replace(" ", "").replace(".", "")
     multiplier = PRESSURE_TO_PSI.get(unit_lower, 1.0)
-    return value * multiplier
+    normalized = value * multiplier
+    
+    return NormalizedValue(
+        raw_value=str(value),
+        raw_unit=unit,
+        normalized_value=normalized,
+        normalized_unit="psi",
+        confidence=1.0 if unit_lower in PRESSURE_TO_PSI else 0.5
+    )
 
 
-def normalize_temperature(value: float, unit: str) -> float:
+def normalize_temperature(value: float, unit: str) -> NormalizedValue:
     """Convert temperature to Celsius (canonical unit)."""
     unit_lower = unit.lower().replace("°", "").strip()
     converter = TEMP_CONVERTERS.get(unit_lower, celsius_to_celsius)
-    return converter(value)
+    normalized = converter(value)
+    
+    return NormalizedValue(
+        raw_value=str(value),
+        raw_unit=unit,
+        normalized_value=normalized,
+        normalized_unit="celsius",
+        confidence=1.0 if unit_lower in TEMP_CONVERTERS else 0.5
+    )
 
 
-def normalize_length(value: float, unit: str) -> float:
+def normalize_length(value: float, unit: str) -> NormalizedValue:
     """Convert length to mm (canonical unit)."""
     unit_lower = unit.lower().strip()
     multiplier = LENGTH_TO_MM.get(unit_lower, 1.0)
-    return value * multiplier
+    normalized = value * multiplier
+    
+    return NormalizedValue(
+        raw_value=str(value),
+        raw_unit=unit,
+        normalized_value=normalized,
+        normalized_unit="mm",
+        confidence=1.0 if unit_lower in LENGTH_TO_MM else 0.5
+    )
 
+
+def normalize_time(value: float, unit: str) -> NormalizedValue:
+    """Convert time to milliseconds (canonical unit)."""
+    unit_lower = unit.lower().strip()
+    multiplier = TIME_TO_MS.get(unit_lower, 1.0)
+    normalized = value * multiplier
+    
+    return NormalizedValue(
+        raw_value=str(value),
+        raw_unit=unit,
+        normalized_value=normalized,
+        normalized_unit="ms",
+        confidence=1.0 if unit_lower in TIME_TO_MS else 0.5
+    )
+
+
+def normalize_spec_value(spec_key: str, value: Any, unit: str = "") -> NormalizedValue:
+    """
+    Normalize a specification value based on its ontology definition.
+    
+    Args:
+        spec_key: The ontology key
+        value: The raw value
+        unit: The unit (if applicable)
+    
+    Returns:
+        NormalizedValue with both raw and normalized forms
+    """
+    if spec_key not in PRESSURE_TRANSMITTER_ONTOLOGY:
+        return NormalizedValue(
+            raw_value=str(value),
+            raw_unit=unit,
+            normalized_value=value,
+            normalized_unit=unit,
+            confidence=0.5
+        )
+    
+    spec_def = PRESSURE_TRANSMITTER_ONTOLOGY[spec_key]
+    canonical_unit = spec_def.canonical_unit
+    
+    try:
+        if canonical_unit == "psi" and isinstance(value, (int, float)):
+            return normalize_pressure(float(value), unit)
+        elif canonical_unit == "celsius" and isinstance(value, (int, float)):
+            return normalize_temperature(float(value), unit)
+        elif canonical_unit == "mm" and isinstance(value, (int, float)):
+            return normalize_length(float(value), unit)
+        elif canonical_unit == "ms" and isinstance(value, (int, float)):
+            return normalize_time(float(value), unit)
+        else:
+            return NormalizedValue(
+                raw_value=str(value),
+                raw_unit=unit,
+                normalized_value=value,
+                normalized_unit=canonical_unit or unit,
+                confidence=1.0
+            )
+    except (ValueError, TypeError):
+        return NormalizedValue(
+            raw_value=str(value),
+            raw_unit=unit,
+            normalized_value=value,
+            normalized_unit=unit,
+            confidence=0.3
+        )
+
+
+# =============================================================================
+# PARSING UTILITIES
+# =============================================================================
 
 def parse_range(text: str, unit_converter=None) -> Optional[Tuple[float, float]]:
     """Parse a range like '0-6000 psi' or '10 to 100 bar'."""
@@ -465,6 +933,80 @@ def parse_percentage(text: str) -> Optional[float]:
     return None
 
 
+def extract_number_with_unit(text: str) -> Optional[Tuple[float, str]]:
+    """Extract a number and its unit from text."""
+    pattern = r"(-?\d+\.?\d*)\s*([a-zA-Z°/%]+)"
+    match = re.search(pattern, text)
+    if match:
+        return (float(match.group(1)), match.group(2))
+    return None
+
+
+# =============================================================================
+# AI-DERIVED ATTRIBUTE HANDLING
+# =============================================================================
+
+# Store for AI-discovered attributes not in the ontology
+AI_DERIVED_ATTRIBUTES: Dict[str, Dict[str, Any]] = {}
+
+
+def register_ai_derived_attribute(
+    name: str,
+    value: str,
+    source_url: str,
+    occurrence_count: int = 1
+) -> str:
+    """
+    Register a new AI-discovered attribute that doesn't map to the ontology.
+    
+    Args:
+        name: The attribute name discovered
+        value: Example value
+        source_url: Where it was found
+        occurrence_count: How many times it's been seen
+    
+    Returns:
+        The normalized attribute key
+    """
+    key = name.lower().replace(" ", "_").replace("-", "_")
+    key = re.sub(r'[^a-z0-9_]', '', key)
+    
+    if key in AI_DERIVED_ATTRIBUTES:
+        AI_DERIVED_ATTRIBUTES[key]["occurrence_count"] += occurrence_count
+        if source_url not in AI_DERIVED_ATTRIBUTES[key]["sources"]:
+            AI_DERIVED_ATTRIBUTES[key]["sources"].append(source_url)
+        if value not in AI_DERIVED_ATTRIBUTES[key]["example_values"]:
+            AI_DERIVED_ATTRIBUTES[key]["example_values"].append(value)
+    else:
+        AI_DERIVED_ATTRIBUTES[key] = {
+            "original_name": name,
+            "normalized_key": key,
+            "example_values": [value],
+            "sources": [source_url],
+            "occurrence_count": occurrence_count,
+            "is_ai_derived": True,
+        }
+    
+    return key
+
+
+def get_ai_derived_attributes() -> Dict[str, Dict[str, Any]]:
+    """Get all AI-discovered attributes."""
+    return AI_DERIVED_ATTRIBUTES.copy()
+
+
+def get_frequently_seen_ai_attributes(min_occurrences: int = 3) -> List[Dict[str, Any]]:
+    """Get AI-derived attributes seen multiple times (candidates for ontology)."""
+    return [
+        attr for attr in AI_DERIVED_ATTRIBUTES.values()
+        if attr["occurrence_count"] >= min_occurrences
+    ]
+
+
+# =============================================================================
+# PROMPT GENERATION FOR LLM
+# =============================================================================
+
 def get_ontology_for_prompt() -> str:
     """Generate a prompt-friendly description of the ontology for the LLM."""
     lines = [
@@ -486,8 +1028,13 @@ def get_ontology_for_prompt() -> str:
         
         importance_stars = "★" * spec.importance
         
+        # Include aliases for better extraction
+        alias_hint = ""
+        if spec.aliases:
+            alias_hint = f" (Also called: {', '.join(spec.aliases[:3])})"
+        
         lines.append(
-            f"- {key}: [{type_hint}]{unit_hint}{values_hint} {importance_stars}"
+            f"- {key}: [{type_hint}]{unit_hint}{values_hint}{alias_hint} {importance_stars}"
         )
     
     lines.append("\n=== EXTRACTION RULES ===")
@@ -496,8 +1043,42 @@ def get_ontology_for_prompt() -> str:
     lines.append("3. For LIST types: Return array of values")
     lines.append("4. For ENUM types: Use ONLY the allowed values listed")
     lines.append("5. Only extract what you SEE in the text - no guessing")
+    lines.append("6. Include BOTH raw_value (original text) and normalized_value when units differ")
+    lines.append("7. If you find specs NOT in this ontology, include them under 'other_specifications'")
     
     return "\n".join(lines)
+
+
+def get_aggressive_extraction_prompt() -> str:
+    """Get an aggressive extraction prompt that captures ALL possible specs."""
+    return """=== AGGRESSIVE SPECIFICATION EXTRACTION ===
+
+Your goal is to extract EVERY possible technical specification from the text.
+
+STEP 1: Extract ALL specifications you can find, even if they don't match the ontology exactly.
+Look for:
+- Any number followed by a unit (e.g., "0.5% accuracy", "10-30 VDC", "IP67")
+- Any specification pattern: "Name: Value" or "Name - Value"
+- Tables with specification data
+- Bullet points with technical details
+- Parenthetical specifications
+- Footnotes with specs
+
+STEP 2: For each spec, provide:
+{
+    "extracted_name": "what it was called in the source",
+    "value": "the value you found",
+    "unit": "the unit if applicable",
+    "raw_text": "exact quote from source (max 100 chars)",
+    "confidence": 0.0-1.0
+}
+
+STEP 3: Group specs into:
+- "ontology_specs": specs that match the known ontology
+- "other_specifications": specs that don't match but are still valuable
+
+REMEMBER: Extract EVERYTHING. It's better to capture too much than too little.
+"""
 
 
 # =============================================================================
@@ -545,13 +1126,18 @@ def compare_specs(spec1: Dict[str, Any], spec2: Dict[str, Any]) -> Dict[str, Dic
             
             elif spec_def.spec_type == SpecType.VALUE and spec_name in ["accuracy", "repeatability"]:
                 # For accuracy, LOWER is better
-                if val1 < val2:
-                    comparison[spec_name] = {"winner": "product1", "reason": f"Better: {val1}% vs {val2}%"}
-                elif val2 < val1:
-                    comparison[spec_name] = {"winner": "product2", "reason": f"Better: {val2}% vs {val1}%"}
-                else:
-                    comparison[spec_name] = {"winner": "tie", "reason": "Same value"}
-    
+                try:
+                    v1 = float(val1) if not isinstance(val1, (int, float)) else val1
+                    v2 = float(val2) if not isinstance(val2, (int, float)) else val2
+                    if v1 < v2:
+                        comparison[spec_name] = {"winner": "product1", "reason": f"Better: {v1}% vs {v2}%"}
+                    elif v2 < v1:
+                        comparison[spec_name] = {"winner": "product2", "reason": f"Better: {v2}% vs {v1}%"}
+                    else:
+                        comparison[spec_name] = {"winner": "tie", "reason": "Same value"}
+                except (ValueError, TypeError):
+                    comparison[spec_name] = {"winner": "tie", "reason": "Cannot compare values"}
+
     return comparison
 
 
@@ -560,12 +1146,26 @@ __all__ = [
     "PRESSURE_TRANSMITTER_ONTOLOGY",
     "SpecDefinition", 
     "SpecType",
-    "ExtractedSpec",
+    "NormalizedValue",
+    "AIExtractedSpec",
     "get_ontology_for_prompt",
+    "get_aggressive_extraction_prompt",
     "normalize_pressure",
     "normalize_temperature",
+    "normalize_length",
+    "normalize_time",
+    "normalize_spec_value",
     "compare_specs",
     "parse_range",
     "parse_percentage",
+    "extract_number_with_unit",
+    "find_best_ontology_match",
+    "match_partial_phrase",
+    "calculate_similarity",
+    "register_ai_derived_attribute",
+    "get_ai_derived_attributes",
+    "get_frequently_seen_ai_attributes",
+    "AI_DERIVED_ATTRIBUTES",
+    "PRESSURE_TO_PSI",
+    "PSI_TO_OTHER",
 ]
-
