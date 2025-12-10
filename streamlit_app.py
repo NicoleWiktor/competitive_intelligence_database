@@ -341,7 +341,7 @@ def delete_relationships(rel_ids: List[int]):
 def create_network_graph(nodes, edges):
     """Create beautiful interactive network graph with white background."""
     net = Network(
-        height="650px",
+        height="820px",
         width="100%",
         bgcolor="#ffffff",
         font_color="#1f2937",
@@ -520,6 +520,7 @@ def main():
     tabs = st.tabs([
         "📊 Knowledge Graph", 
         "🔄 Pipeline Architecture",
+        "📚 Ontology",
         "📋 Specification Table", 
         "🔍 Compare Products",
         "✅ Verify Data"
@@ -606,7 +607,7 @@ def main():
                     with open(f.name, 'r', encoding='utf-8') as f2:
                         html_content = f2.read()
                 
-                components.html(html_content, height=670, scrolling=False)
+                components.html(html_content, height=850, scrolling=False)
             
             else:
                 st.info("📊 No graph data yet. Run the pipeline to generate data.")
@@ -735,8 +736,304 @@ def main():
             </div>
             """, unsafe_allow_html=True)
     
-    # === TAB 3: SPECIFICATION TABLE ===
+    # === TAB 3: ONTOLOGY ===
     with tabs[2]:
+        st.markdown("""
+        <div class="section-header">
+            <h2>📚 Specification Ontology</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        The **ontology** defines what specifications matter for pressure transmitters and how to normalize them 
+        for head-to-head comparison. It's a hybrid human + AI approach:
+        
+        - **Human-defined**: The specification categories, units, and importance levels
+        - **AI-extracted**: Values are extracted from datasheets and mapped to the ontology
+        - **AI-derived**: New specs found by AI that aren't in the ontology are tagged separately
+        """)
+        
+        st.markdown("---")
+        
+        # Display ontology categories
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown("### 🎯 High-Priority Specifications")
+            st.markdown("*These are critical for competitive comparison (★★★★★)*")
+            
+            high_priority = [
+                ("**Pressure Range**", "Operating pressure span", "psi (normalized from bar, kPa, MPa)"),
+                ("**Accuracy**", "Measurement precision", "% of full scale"),
+                ("**Output Signal**", "Communication protocol", "4-20mA, HART, Profibus, etc."),
+                ("**Measurement Type**", "Gauge, Absolute, Differential", "Enum values"),
+            ]
+            
+            for name, desc, unit in high_priority:
+                st.markdown(f"- {name}: {desc} → *{unit}*")
+            
+            st.markdown("### 🔧 Physical Specifications")
+            st.markdown("*Connection and material specs (★★★★)*")
+            
+            physical = [
+                ("**Process Connection**", "1/4 NPT, 1/2 NPT, G1/2, Tri-Clamp, etc."),
+                ("**Wetted Materials**", "316 SS, Hastelloy, Monel, Titanium"),
+                ("**IP Rating**", "IP65, IP66, IP67, IP68, NEMA 4X"),
+                ("**Hazardous Area**", "ATEX, IECEx, FM, Class I Div 1/2"),
+            ]
+            
+            for name, values in physical:
+                st.markdown(f"- {name}: *{values}*")
+        
+        with col2:
+            st.markdown("### 🌡️ Environmental Specifications")
+            st.markdown("*Temperature ranges and certifications (★★★★)*")
+            
+            environmental = [
+                ("**Operating Temp**", "Ambient temperature range", "°C (normalized from °F)"),
+                ("**Process Temp**", "Media temperature range", "°C"),
+                ("**SIL Rating**", "Safety Integrity Level", "SIL1, SIL2, SIL3"),
+            ]
+            
+            for name, desc, unit in environmental:
+                st.markdown(f"- {name}: {desc} → *{unit}*")
+            
+            st.markdown("### ⚡ Electrical Specifications")
+            st.markdown("*Power and signal specs (★★★)*")
+            
+            electrical = [
+                ("**Supply Voltage**", "DC power input", "V DC"),
+                ("**Response Time**", "Measurement update speed", "ms"),
+                ("**Load Resistance**", "Maximum loop resistance", "ohm"),
+            ]
+            
+            for name, desc, unit in electrical:
+                st.markdown(f"- {name}: {desc} → *{unit}*")
+        
+        st.markdown("---")
+        
+        # Unit conversion explanation
+        st.markdown("### 🔄 Automatic Unit Normalization")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**Pressure → PSI**")
+            st.code("""
+1 bar = 14.5038 psi
+1 kPa = 0.145 psi
+1 MPa = 145.038 psi
+1 mbar = 0.0145 psi
+            """)
+        
+        with col2:
+            st.markdown("**Temperature → Celsius**")
+            st.code("""
+°F → °C: (F - 32) × 5/9
+K → °C: K - 273.15
+            """)
+        
+        with col3:
+            st.markdown("**Length → mm**")
+            st.code("""
+1 inch = 25.4 mm
+1 ft = 304.8 mm
+1 cm = 10 mm
+            """)
+        
+        st.markdown("---")
+        
+        # Fuzzy matching explanation
+        st.markdown("### 🔍 Fuzzy Matching & Aliases")
+        
+        st.markdown("""
+        The ontology uses **fuzzy matching** (similarity > 0.6) to recognize specs even when named differently:
+        """)
+        
+        fuzzy_examples = {
+            "pressure_range": ["measuring range", "pressure span", "span", "range of measurement"],
+            "accuracy": ["reference accuracy", "measurement error", "max error", "precision"],
+            "output_signal": ["signal output", "communication protocol", "fieldbus", "analog output"],
+            "wetted_materials": ["wetted parts", "media contact materials", "diaphragm material"],
+        }
+        
+        for canonical, aliases in fuzzy_examples.items():
+            st.markdown(f"- `{canonical}` ← *{', '.join(aliases)}*")
+        
+        st.markdown("---")
+        
+        # ACTUAL DATA TABLE - Show real extracted specs with normalization
+        st.markdown("### 📊 Extracted Specifications (Actual Data)")
+        st.markdown("""
+        This table shows the **actual specifications** extracted from datasheets, including:
+        - **Original Value**: What was extracted from the source
+        - **Normalized Value**: What it was converted to (if unit conversion applied)
+        - **Original Unit**: The unit found in the source
+        - **Target Unit**: The canonical unit from the ontology
+        """)
+        
+        try:
+            # Fetch specs from Neo4j including normalized values
+            driver = get_neo4j_driver()
+            with driver.session() as session:
+                result = session.run("""
+                    MATCH (p:Product)-[:HAS_SPEC]->(s:Specification)
+                    RETURN 
+                        p.name as product,
+                        s.spec_type as spec_type,
+                        s.display_name as display_name,
+                        s.value as original_value,
+                        s.normalized_value as normalized_value,
+                        s.unit as original_unit,
+                        s.source_urls as sources
+                    ORDER BY p.name, s.spec_type
+                    LIMIT 100
+                """)
+                
+                spec_rows = []
+                for record in result:
+                    spec_type = record['spec_type'] or ''
+                    original_value = record['original_value'] or ''
+                    normalized_value = record['normalized_value'] or ''
+                    original_unit = record['original_unit'] or ''
+                    display_name = record['display_name'] or spec_type.replace('_', ' ').title()
+                    
+                    # Determine if this is an ontology match
+                    is_ontology = spec_type in PRESSURE_TRANSMITTER_ONTOLOGY
+                    ontology_status = "✅ Ontology" if is_ontology else "🤖 AI-Derived"
+                    
+                    # Get canonical unit if in ontology
+                    target_unit = ""
+                    if is_ontology:
+                        target_unit = PRESSURE_TRANSMITTER_ONTOLOGY[spec_type].canonical_unit or ""
+                    
+                    # Check if conversion happened
+                    was_converted = (normalized_value and normalized_value != original_value and 
+                                    normalized_value != '' and original_value != '')
+                    conversion_indicator = "🔄" if was_converted else ""
+                    
+                    spec_rows.append({
+                        'Product': record['product'],
+                        'Spec Type': display_name,
+                        'Original Value': original_value,
+                        'Original Unit': original_unit,
+                        'Normalized Value': normalized_value if was_converted else '-',
+                        'Target Unit': target_unit,
+                        'Converted': conversion_indicator,
+                        'Status': ontology_status,
+                    })
+            
+            driver.close()
+            
+            if spec_rows:
+                spec_df = pd.DataFrame(spec_rows)
+                
+                # Filters
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    product_filter = st.multiselect(
+                        "Filter by Product",
+                        options=sorted(spec_df['Product'].unique()),
+                        default=[],
+                        key="ontology_product_filter"
+                    )
+                with col2:
+                    status_filter = st.multiselect(
+                        "Filter by Status",
+                        options=["✅ Ontology", "🤖 AI-Derived"],
+                        default=[],
+                        key="ontology_status_filter"
+                    )
+                with col3:
+                    show_converted_only = st.checkbox(
+                        "Show only converted specs 🔄",
+                        value=False,
+                        key="ontology_converted_filter"
+                    )
+                
+                # Apply filters
+                filtered_spec_df = spec_df.copy()
+                if product_filter:
+                    filtered_spec_df = filtered_spec_df[filtered_spec_df['Product'].isin(product_filter)]
+                if status_filter:
+                    filtered_spec_df = filtered_spec_df[filtered_spec_df['Status'].isin(status_filter)]
+                if show_converted_only:
+                    filtered_spec_df = filtered_spec_df[filtered_spec_df['Converted'] == '🔄']
+                
+                # Stats
+                ontology_count = len(filtered_spec_df[filtered_spec_df['Status'] == '✅ Ontology'])
+                ai_count = len(filtered_spec_df[filtered_spec_df['Status'] == '🤖 AI-Derived'])
+                converted_count = len(filtered_spec_df[filtered_spec_df['Converted'] == '🔄'])
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Specs", len(filtered_spec_df))
+                with col2:
+                    st.metric("Ontology Matches", ontology_count)
+                with col3:
+                    st.metric("AI-Derived", ai_count)
+                with col4:
+                    st.metric("Unit Conversions 🔄", converted_count)
+                
+                # Display table
+                st.dataframe(
+                    filtered_spec_df,
+                    use_container_width=True,
+                    height=450,
+                    hide_index=True,
+                    column_config={
+                        "Product": st.column_config.TextColumn("Product", width="small"),
+                        "Spec Type": st.column_config.TextColumn("Spec Type", width="small"),
+                        "Original Value": st.column_config.TextColumn("Original Value", width="medium"),
+                        "Original Unit": st.column_config.TextColumn("Orig Unit", width="small"),
+                        "Normalized Value": st.column_config.TextColumn("→ Normalized", width="medium"),
+                        "Target Unit": st.column_config.TextColumn("Target Unit", width="small"),
+                        "Converted": st.column_config.TextColumn("🔄", width="small"),
+                        "Status": st.column_config.TextColumn("Status", width="small"),
+                    }
+                )
+                
+                # Show spec type distribution
+                st.markdown("#### Spec Type Distribution")
+                spec_counts = filtered_spec_df['Spec Type'].value_counts().head(15)
+                st.bar_chart(spec_counts)
+                
+            else:
+                st.info("No specifications extracted yet. Run the pipeline first!")
+                
+        except Exception as e:
+            st.warning(f"Could not load specifications: {str(e)}")
+        
+        st.markdown("---")
+        
+        # AI-derived attributes
+        st.markdown("### 🤖 AI-Derived Attributes")
+        
+        st.markdown("""
+        When the AI finds specifications **not in the ontology**, it:
+        1. Saves them with a special `AI_DERIVED` tag
+        2. Tracks how often each new spec appears
+        3. Specs seen 3+ times become candidates for ontology expansion
+        
+        This allows the system to **learn new specification types** automatically!
+        """)
+        
+        # Show AI-derived specs if any exist
+        try:
+            from src.ontology.specifications import get_ai_derived_attributes
+            ai_derived = get_ai_derived_attributes()
+            if ai_derived:
+                st.markdown("**Recently discovered specs:**")
+                for key, data in list(ai_derived.items())[:10]:
+                    count = data.get('occurrence_count', 1)
+                    st.markdown(f"- `{key}`: seen {count}x")
+            else:
+                st.info("No AI-derived attributes yet. Run the pipeline to discover new specs!")
+        except:
+            st.info("Run the pipeline to see AI-derived attributes.")
+    
+    # === TAB 4: SPECIFICATION TABLE ===
+    with tabs[3]:
         st.markdown("""
         <div class="section-header">
             <h2>📋 Product Specification Database</h2>
@@ -755,7 +1052,16 @@ def main():
                 column_order.extend(sorted(spec_columns))
                 
                 # Reorder columns
-                display_df = products_df[[col for col in column_order if col in products_df.columns]]
+                display_df = products_df[[col for col in column_order if col in products_df.columns]].copy()
+                
+                # Convert list columns to strings to avoid PyArrow errors
+                for col in display_df.columns:
+                    if display_df[col].apply(lambda x: isinstance(x, list)).any():
+                        display_df[col] = display_df[col].apply(
+                            lambda x: ', '.join(str(i) for i in x) if isinstance(x, list) else str(x) if x else ''
+                        )
+                    # Also handle None/NaN values
+                    display_df[col] = display_df[col].fillna('')
                 
                 # Show count
                 st.markdown(f"**{len(display_df)} products** with specifications")
@@ -808,8 +1114,8 @@ def main():
         except Exception as e:
             st.warning(f"⚠️ Could not load specifications: {str(e)}")
     
-    # === TAB 3: PRODUCT COMPARISON ===
-    with tabs[3]:
+    # === TAB 5: PRODUCT COMPARISON ===
+    with tabs[4]:
         st.markdown("""
         <div class="section-header">
             <h2>🔍 Head-to-Head Product Comparison</h2>
@@ -836,11 +1142,21 @@ def main():
                     # Create comparison view
                     comparison_df = products_df[products_df['Product'].isin(selected)].copy()
                     
+                    # Convert ALL columns to strings to avoid PyArrow errors
+                    for col in comparison_df.columns:
+                        comparison_df[col] = comparison_df[col].apply(
+                            lambda x: ', '.join(str(i) for i in x) if isinstance(x, list) 
+                            else str(x) if pd.notna(x) and x != '' else ''
+                        )
+                    
                     # Transpose for side-by-side view
                     comparison_df = comparison_df.set_index('Product')
                     if 'Sources' in comparison_df.columns:
                         comparison_df = comparison_df.drop(columns=['Sources'])
                     comparison_df = comparison_df.T
+                    
+                    # Ensure all values are strings after transpose
+                    comparison_df = comparison_df.astype(str).replace('nan', '').replace('None', '')
                     
                     st.markdown("### 📊 Comparison Matrix")
                     
@@ -884,8 +1200,8 @@ def main():
         except Exception as e:
             st.warning(f"⚠️ Could not load comparison data: {str(e)}")
     
-    # === TAB 4: DATA VERIFICATION ===
-    with tabs[4]:
+    # === TAB 6: DATA VERIFICATION ===
+    with tabs[5]:
         st.markdown("""
         <div class="section-header">
             <h2>✅ Human-in-the-Loop Verification</h2>

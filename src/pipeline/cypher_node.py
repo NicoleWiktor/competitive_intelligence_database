@@ -39,6 +39,40 @@ def _normalize_spec_name(name: str) -> str:
     return name
 
 
+# Known company patterns for product name inference
+# Order matters - more specific patterns first
+COMPANY_PATTERNS = [
+    ("Emerson Rosemount", ["rosemount"]),
+    ("Emerson", ["emerson", "fisher"]),
+    ("ABB", ["abb ", "abb-", "abb266", "266 pressure"]),
+    ("Siemens", ["siemens", "sitrans"]),
+    ("Endress+Hauser", ["endress", "e+h", "cerabar", "deltabar", "promass"]),
+    ("Yokogawa", ["yokogawa", "ejx", "eja", "dpharp"]),
+    ("WIKA", ["wika"]),
+    ("Honeywell", ["honeywell", "smartline", "st700", "st800", "stg700", "std700"]),
+    ("Schneider Electric", ["schneider", "foxboro"]),
+    ("Danfoss", ["danfoss"]),
+    ("Fuji Electric", ["fuji"]),
+    ("Krohne", ["krohne"]),
+    ("Vega", ["vega"]),
+]
+
+
+def _infer_company_from_product(product_name: str) -> str:
+    """
+    Infer company name from product name using known patterns.
+    Returns empty string if no match found.
+    """
+    product_lower = product_name.lower()
+    
+    for company, patterns in COMPANY_PATTERNS:
+        for pattern in patterns:
+            if pattern.lower() in product_lower:
+                return company
+    
+    return ""
+
+
 def to_merge_cypher(data: Dict) -> str:
     """
     Convert JSON data to Cypher MERGE statements for Neo4j.
@@ -66,10 +100,16 @@ def to_merge_cypher(data: Dict) -> str:
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Price) REQUIRE n.name IS UNIQUE;",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Specification) REQUIRE n.name IS UNIQUE;",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Review) REQUIRE n.name IS UNIQUE;",
-        "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Review) REQUIRE n.name IS UNIQUE;",
     ])
     
-    # Step 2: Extract source URL from data
+    # Step 2: ALWAYS create Honeywell as the baseline company FIRST
+    stmts.append(
+        "MERGE (h:Company {name: 'Honeywell'}) "
+        "ON CREATE SET h.is_baseline = true, h.source_urls = [] "
+        "ON MATCH SET h.is_baseline = true;"
+    )
+    
+    # Step 3: Extract source URL from data
     raw_url = (data.get("Doc") or {}).get("source_url") or ""
     if isinstance(raw_url, list):
         doc_url = _esc(raw_url[-1] if raw_url else "")
@@ -77,18 +117,50 @@ def to_merge_cypher(data: Dict) -> str:
         doc_url = _esc(raw_url)
     
     # Track created nodes to avoid duplicates
-    created_companies = set()
+    created_companies = set(["Honeywell"])  # Honeywell already created above
     created_products = set()
     created_specs = set()
     
-    # Step 3: Process each relationship (handle both cases for compatibility)
+    # Step 4: Get all relationships
     relationships = data.get("relationships", []) or data.get("Relationships", []) or []
+    
+    # Step 5: FIRST PASS - Create all competitor companies and COMPETES_WITH relationships
+    # This ensures all companies exist before we try to link products to them
+    for rel in relationships:
+        relationship_type = (rel.get("relationship") or "").upper().replace(" ", "_")
+        if relationship_type == "COMPETES_WITH":
+            competitor_name = _esc(rel.get("target") or "")
+            rel_url = _esc(rel.get("source_url") or doc_url)
+            
+            if competitor_name and competitor_name.lower() != "honeywell":
+                # Create the competitor company node
+                stmts.append(
+                    f"MERGE (c:Company {{name: '{competitor_name}'}}) "
+                    f"ON CREATE SET c.source_urls = ['{rel_url}'] "
+                    f"ON MATCH SET c.source_urls = CASE WHEN '{rel_url}' IN c.source_urls THEN c.source_urls ELSE c.source_urls + '{rel_url}' END;"
+                )
+                created_companies.add(competitor_name)
+                
+                # Create the COMPETES_WITH relationship from Honeywell
+                stmts.append(
+                    f"MATCH (h:Company {{name: 'Honeywell'}}), (c:Company {{name: '{competitor_name}'}}) "
+                    f"MERGE (h)-[rel:COMPETES_WITH]->(c) "
+                    f"ON CREATE SET rel.source_urls = ['{rel_url}'] "
+                    f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END;"
+                )
+                print(f"[cypher] Created COMPETES_WITH: Honeywell → {competitor_name}")
+    
+    # Step 6: Process remaining relationships
     for rel in relationships:
         relationship_type = _esc((rel.get("relationship") or "").upper().replace(" ", "_"))
         source_label = rel.get("source_type") or "Company"
         target_label = rel.get("target_type") or "Product"
         source_name = _esc(rel.get("source") or "")
         target_name = _esc(rel.get("target") or "")
+        
+        # Skip COMPETES_WITH - already handled in first pass
+        if relationship_type == "COMPETES_WITH":
+            continue
         
         # Get source URL and evidence
         rel_url = _esc(rel.get("source_url") or doc_url)
@@ -102,11 +174,33 @@ def to_merge_cypher(data: Dict) -> str:
         source_label = _normalize_label(source_label, relationship_type, is_source=True)
         target_label = _normalize_label(target_label, relationship_type, is_source=False)
         
+        # === ENSURE COMPANY EXISTS FOR OFFERS_PRODUCT ===
+        if relationship_type == "OFFERS_PRODUCT" and source_label == "Company":
+            if source_name not in created_companies:
+                stmts.append(
+                    f"MERGE (c:Company {{name: '{source_name}'}}) "
+                    f"ON CREATE SET c.source_urls = ['{rel_url}'] "
+                    f"ON MATCH SET c.source_urls = CASE WHEN '{rel_url}' IN c.source_urls THEN c.source_urls ELSE c.source_urls + '{rel_url}' END;"
+                )
+                created_companies.add(source_name)
+                
+                # Also create COMPETES_WITH if not Honeywell
+                if source_name.lower() != "honeywell":
+                    stmts.append(
+                        f"MATCH (h:Company {{name: 'Honeywell'}}), (c:Company {{name: '{source_name}'}}) "
+                        f"MERGE (h)-[rel:COMPETES_WITH]->(c) "
+                        f"ON CREATE SET rel.source_urls = ['{rel_url}'] "
+                        f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END;"
+                    )
+                    print(f"[cypher] Auto-created COMPETES_WITH: Honeywell → {source_name}")
+        
         # === SPECIAL HANDLING FOR HAS_SPEC RELATIONSHIPS ===
         if relationship_type == "HAS_SPEC":
             # Support both "spec_type" (from agent) and "spec_name" (legacy)
             spec_name = rel.get("spec_type") or rel.get("spec_name", "")
             spec_value = rel.get("spec_value", target_name)
+            normalized_value = rel.get("normalized_value", spec_value)  # Converted value
+            spec_unit = rel.get("unit", "")  # Original unit
             rel_snippet = _esc(rel.get("snippet", ""))
             
             # Create specification node with rich metadata
@@ -122,14 +216,19 @@ def to_merge_cypher(data: Dict) -> str:
                 created_specs.add(spec_node_id)
                 
                 # Specification node: name shows the value for display in graph
+                # Store both original value and normalized value for comparison
                 stmts.append(
                     f"MERGE (spec:Specification {{name: '{_esc(spec_node_name)}'}}) "
                     f"ON CREATE SET spec.spec_type = '{_esc(spec_name)}', "
                     f"spec.display_name = '{_esc(spec_display_name)}', "
                     f"spec.value = '{_esc(spec_value)}', "
+                    f"spec.normalized_value = '{_esc(str(normalized_value))}', "
+                    f"spec.unit = '{_esc(spec_unit)}', "
                     f"spec.product = '{source_name}', "
                     f"spec.source_urls = ['{rel_url}'] "
                     f"ON MATCH SET spec.value = '{_esc(spec_value)}', "
+                    f"spec.normalized_value = '{_esc(str(normalized_value))}', "
+                    f"spec.unit = '{_esc(spec_unit)}', "
                     f"spec.source_urls = CASE WHEN '{rel_url}' IN spec.source_urls THEN spec.source_urls ELSE spec.source_urls + '{rel_url}' END;"
                 )
             
@@ -141,6 +240,37 @@ def to_merge_cypher(data: Dict) -> str:
                     f"ON CREATE SET p.source_urls = ['{rel_url}'] "
                     f"ON MATCH SET p.source_urls = CASE WHEN '{rel_url}' IN p.source_urls THEN p.source_urls ELSE p.source_urls + '{rel_url}' END;"
                 )
+                
+                # AUTO-INFER company from product name and create OFFERS_PRODUCT
+                inferred_company = _infer_company_from_product(source_name)
+                if inferred_company:
+                    # Create the company if it doesn't exist
+                    if inferred_company not in created_companies:
+                        stmts.append(
+                            f"MERGE (c:Company {{name: '{inferred_company}'}}) "
+                            f"ON CREATE SET c.source_urls = ['{rel_url}'] "
+                            f"ON MATCH SET c.source_urls = CASE WHEN '{rel_url}' IN c.source_urls THEN c.source_urls ELSE c.source_urls + '{rel_url}' END;"
+                        )
+                        created_companies.add(inferred_company)
+                        
+                        # Create COMPETES_WITH if not Honeywell
+                        if inferred_company.lower() != "honeywell":
+                            stmts.append(
+                                f"MATCH (h:Company {{name: 'Honeywell'}}), (c:Company {{name: '{inferred_company}'}}) "
+                                f"MERGE (h)-[rel:COMPETES_WITH]->(c) "
+                                f"ON CREATE SET rel.source_urls = ['{rel_url}'] "
+                                f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END;"
+                            )
+                            print(f"[cypher] Auto-inferred COMPETES_WITH: Honeywell → {inferred_company}")
+                    
+                    # Create OFFERS_PRODUCT relationship
+                    stmts.append(
+                        f"MATCH (c:Company {{name: '{inferred_company}'}}), (p:Product {{name: '{source_name}'}}) "
+                        f"MERGE (c)-[rel:OFFERS_PRODUCT]->(p) "
+                        f"ON CREATE SET rel.source_urls = ['{rel_url}'] "
+                        f"ON MATCH SET rel.source_urls = CASE WHEN '{rel_url}' IN rel.source_urls THEN rel.source_urls ELSE rel.source_urls + '{rel_url}' END;"
+                    )
+                    print(f"[cypher] Auto-inferred OFFERS_PRODUCT: {inferred_company} → {source_name}")
             
             # Create HAS_SPEC relationship
             stmts.append(
