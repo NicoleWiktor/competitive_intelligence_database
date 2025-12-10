@@ -1,99 +1,51 @@
-## Competitive Intelligence Datebase
+# Competitive Intelligence Database
 
-### Goals
-- To build a structured data store (knowledge graph with neo4j) that connects industries, customer segments, needs, and products to help Honeywell analyze its portfolio and competition.
-- To build an unstructured database of public sources (e.g., trade articles, product catalogs, reviews) to validate and support insights from the structured data.
+Agentic (LangGraph) AI that discovers competitors, products, specs, prices, and reviews for pressure transmitters; the LLM chooses tool calls based on current state (competitors/products/specs/prices/reviews) and stops when thresholds are met. Results are written to Neo4j and visualized in Streamlit.
 
-### Current Pipeline Overview
+## LangGraph Overview
+```
+__start__ → agent (LLM) → router → tool nodes → agent (loop) → __end__
+Tools: search_web, extract_page_content, save_competitor, save_product,
+       save_specification, save_price, save_review, mark_complete
+```
+![LangGraph Pipeline](langgraph_agentic_pipeline.png)
 
-The pipeline uses LangGraph to iteratively extract competitive intelligence data into a knowledge graph:
-
-Current progress
-![LangGraph Pipeline](langgraph_pipeline.png)
-
-**Pipeline Flow:**
-1. **Query Node**: Generates search query
-2. **Extract Node**: Fetches content from Tavily API
-3. **LLM Node**: Extracts structured data (companies, products, relationships)
-4. **Refine Query Node**: Analyzes what's missing and generates next query
-5. **Write Node**: Saves final data to Neo4j
-
-Behavior (high-level):
-- Processes one Tavily page per iteration.
-- LLM extracts data to the schema (Honeywell, competitors, specific products).
-- Refine step iterates until limits are met or attempts are exhausted.
-- Writes results to Neo4j.
-- Knowledge graph can be generated with Neo4j
-
-### Prerequisites
-- Python 3.11
-- Neo4j (Desktop or Docker)
-- Accounts/API keys:
-  - OpenAI API key
-  - Tavily API key
-
-### 1) Create and activate a Conda environment (recommended)
-```bash
+## Setup & Run
+1) Create and activate env, then install deps:
+```
+# conda
 conda create -n ci_db python=3.11 -y
 conda activate ci_db
-```
 
-Alternatively, with venv:
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
+# OR venv
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-### 2) Install dependencies
-```bash
 pip install -r requirements.txt
 ```
 
-### 3) Configure environment variables
-Create a `.env` file in the project root with:
-```env
-OPENAI_API_KEY=your_openai_key
-TAVILY_API_KEY=your_tavily_key
-
-# Neo4j connection
+2) Create `.env` with keys and Neo4j creds:
+```
+OPENAI_API_KEY=...
+TAVILY_API_KEY=...
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_password
-
-# Optional chunking overrides
-# CHUNK_SIZE=3000
-# CHUNK_OVERLAP=300
 ```
 
-### 4) Start Neo4j
-- Neo4j Desktop: start a local database and set the password to match `.env`.
-
-Neo4j Browser: `http://localhost:7474`
-
-### 5) Run the pipeline
-Run from the project root.
-```bash
-python -m src.pipeline.graph_builder
+3) Run the agentic pipeline:
+```
+python -m src.pipeline.graph_builder --mode agentic
 ```
 
-
-### 6) View the knowledge graph
-Open Neo4j Browser at `http://localhost:7474` and run queries like:
+4) Launch the Streamlit dashboard:
 ```
-MATCH (n)-[r]->(m) RETURN n, r, m;
+streamlit run streamlit_app.py
 ```
 
-Reset the database:
+5) Optional quick test:
 ```
-MATCH (n) DETACH DELETE n;
-```
-
-### 7) Optional: Update pipeline visualization
-
-The pipeline graph (`langgraph_pipeline.png`) is included in the repo. To regenerate it:
-
-```bash
-python visualize_pipeline.py
+python -m src.pipeline.graph_builder --mode agentic --iterations 10 --competitors 3
 ```
 
 
