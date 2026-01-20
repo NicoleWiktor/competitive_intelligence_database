@@ -1,84 +1,119 @@
 # Competitive Intelligence Database
 
-Agentic (LangGraph) AI that discovers competitors, products, specs, prices, and reviews for pressure transmitters; the LLM chooses tool calls based on current state (competitors/products/specs/prices/reviews) and stops when thresholds are met. Results are written to Neo4j and visualized in Streamlit.
+An agentic AI system built with LangGraph that autonomously researches Honeywell's competitors in the pressure transmitter market. The LLM decides which tools to call, what to search, and when to stop. Results are stored in Neo4j (structured graph) and ChromaDB (evidence chunks for human in the loop verification).
 
-## LangGraph Overview
-```
-__start__ → agent (LLM) → router → tool nodes → agent (loop) → __end__
+## Architecture
 
-Core tools (agent chooses):
-- search_web / search_with_variations           → find sources
-- extract_page_content / extract_multiple_pages → pull pages + recurse relevant links
-- save_competitor / save_product                → build companies/products
-- save_multiple_specs                           → bulk specs (with unit normalization)
-- save_price / save_review                      → commerce + sentiment
-- search_evidence_store / get_search_suggestions→ recall evidence, fill gaps
-- mark_complete                                 → graceful finish
-```
-![LangGraph Pipeline](langgraph_agentic_pipeline.png)
+The system uses a LangGraph StateGraph with two nodes (`agent` and `tools`) in a loop:
 
-## Setup & Run
-1) Create and activate env, then install deps:
-```
-# conda
+1. `agent` node calls the LLM with bound tools. LLM decides which tools to call.
+2. `should_continue` checks if LLM returned tool calls. If yes → go to tools, if no → end.
+3. `tools` node executes the tool calls, results go back to agent, repeat until done.
+
+**Tools (LLM chooses which to call):**
+
+| Tool | Purpose |
+|------|---------|
+| `search_web` | Tavily web search |
+| `extract_page_content` | Tavily page extraction + stores chunks in ChromaDB |
+| `save_competitor` | Saves company with evidence link |
+| `save_product` | Saves product + specs with evidence link |
+| `get_current_progress` | Returns current research status |
+| `finish_research` | Signals completion |
+
+**Data Storage:**
+
+| Store | Purpose |
+|-------|---------|
+| **ChromaDB** | Raw text chunks from web pages (evidence for verification) |
+| **Neo4j** | Structured knowledge graph (Companies, Products, Specifications) |
+
+## How It Works
+
+1. LLM receives the conversation history and decides which tools to call
+2. If LLM returns tool calls → execute them, add results to conversation, go back to step 1
+3. If LLM returns no tool calls (or calls `finish_research`) → end
+4. Final data written to Neo4j
+
+
+## Setup
+
+### 1. Create Environment
+
+```bash
+# Using conda (recommended)
 conda create -n ci_db python=3.11 -y
 conda activate ci_db
 
-# OR venv
+# OR using venv
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
+```
 
+### 2. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-2) Create `.env` with keys and Neo4j creds:
-```
-OPENAI_API_KEY=...
-TAVILY_API_KEY=...
+### 3. Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+OPENAI_API_KEY=sk-...
+TAVILY_API_KEY=tvly-...
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_password
 ```
 
-3) Run the agentic pipeline (recommended):
-```
-python -m src.pipeline.graph_builder --mode agentic --iterations 50
+### 4. Start Neo4j
+
+## Usage
+
+### Run the Pipeline
+
+```bash
+# Specify number of competitors (max 10)
+python main.py --competitors 10
+
+# Keep existing data (incremental mode)
+python main.py --competitors 5 --incremental
 ```
 
-4) Launch the Streamlit dashboard:
-```
+### Launch Dashboard
+
+```bash
+python main.py --streamlit
+
+# Or directly:
 streamlit run streamlit_app.py
 ```
 
-5) Optional quick test:
+### Verify Evidence
+
+```bash
+# Show ChromaDB stats
+python verify_evidence.py --stats
+
+# Search evidence
+python verify_evidence.py --search "Emerson 3051S accuracy"
+
+# Get specific chunk
+python verify_evidence.py <chunk_id>
 ```
-python -m src.pipeline.graph_builder --mode agentic --iterations 10 --competitors 3
-```
-
-## Data Model & Ontology
-- Specifications follow the pressure-transmitter ontology (`src/ontology/specifications.py`)
-- Fuzzy matching on spec aliases (similarity > 0.6)
-- Unit normalization stored alongside raw (pressure psi/bar/kPa, temp °C/°F/K, etc.)
-- AI-derived attributes allowed when no canonical slot fits
-- Neo4j graph:
-  - Company ─[:OFFERS_PRODUCT]→ Product
-  - Product ─[:HAS_SPEC]→ Specification (`value`, `normalized_value`, `unit`)
-  - Product ─[:HAS_PRICE]→ Price
-  - Product ─[:HAS_REVIEW]→ Review
-
-## Evidence (ChromaDB)
-- All extracted pages are chunked (800 chars, 100 overlap) and stored with metadata (URL, query, title, timestamp)
-- Chunk IDs are attached to Neo4j relationships for traceability
-- `search_evidence_store` can recall prior evidence
-
-## Streamlit UI Highlights
-- Knowledge graph view (larger canvas)
-- Ontology tab explains specs, fuzzy matching, unit conversions, AI-derived attrs
-- Ontology tab table shows raw vs normalized values from actual data
-- Spec table & comparison matrix made Arrow-safe (string casting for list columns)
 
 
+## Streamlit Dashboard Features
 
-
+| Tab | Description |
+|-----|-------------|
+| 📊 Knowledge Graph | Interactive visualization of the Neo4j graph |
+| 🔄 Pipeline Architecture | Shows how LangGraph agent works |
+| 📚 Ontology | Spec definitions and normalization rules |
+| 📋 Specification Table | All products and their specs in a table |
+| 🔍 Compare Products | Side-by-side product comparison |
+| ✅ Verify Data | Human verification with ChromaDB evidence |
 
 

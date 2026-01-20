@@ -192,11 +192,11 @@ def fetch_graph_data():
         result = session.run("""
             MATCH (source)-[rel]->(target)
             RETURN 
-                id(source) as source_id,
+                elementId(source) as source_id,
                 labels(source)[0] as source_label,
                 source.name as source_name,
                 type(rel) as relationship_type,
-                id(target) as target_id,
+                elementId(target) as target_id,
                 labels(target)[0] as target_label,
                 target.name as target_name,
                 rel.source_urls as rel_sources,
@@ -291,7 +291,7 @@ def fetch_all_relationships():
         result = session.run("""
             MATCH (source)-[rel]->(target)
             RETURN 
-                id(rel) as rel_id,
+                elementId(rel) as rel_id,
                 labels(source)[0] as source_label,
                 source.name as source_name,
                 type(rel) as relationship_type,
@@ -492,14 +492,12 @@ def main():
         max_competitors = st.slider("Max Competitors", 1, 10, 5)
         max_iterations = st.slider("Max Iterations", 10, 50, 30)
         
-        if st.button("🚀 Run Agentic Pipeline", use_container_width=True):
+        if st.button("🚀 Run Agentic Pipeline", width="stretch"):
             with st.spinner("🤖 Agent is researching..."):
                 try:
-                    from src.pipeline.graph_builder import run_agentic_mode
-                    result = run_agentic_mode(
-                        target_product=target_product,
+                    from src.pipeline.graph_builder import run_pipeline
+                    result = run_pipeline(
                         max_competitors=max_competitors,
-                        max_iterations=max_iterations
                     )
                     st.success("✅ Pipeline complete!")
                     st.rerun()
@@ -632,25 +630,32 @@ def main():
             
             # Try to load and display the pipeline image
             try:
-                from pathlib import Path
-                pipeline_img_path = Path("langgraph_agentic_pipeline.png")
-                
-                if pipeline_img_path.exists():
-                    st.image(str(pipeline_img_path), caption="LangGraph Agentic Pipeline", use_container_width=True)
-                else:
-                    # Generate if doesn't exist
-                    try:
-                        from src.agents.langgraph_agent import build_agentic_graph
-                        app = build_agentic_graph()
-                        graph = app.get_graph()
-                        png_bytes = graph.draw_mermaid_png()
-                        with open("langgraph_agentic_pipeline.png", "wb") as f:
-                            f.write(png_bytes)
-                        st.image("langgraph_agentic_pipeline.png", caption="LangGraph Agentic Pipeline", use_container_width=True)
-                    except Exception as e:
-                        st.info(f"Pipeline visualization not available: {e}")
+                # Generate pipeline diagram from the LangGraph agent
+                try:
+                    from src.agents.agentic_agent import build_graph
+                    graph = build_graph()
+                    png_bytes = graph.get_graph().draw_mermaid_png()
+                    st.image(png_bytes, caption="LangGraph Agentic Pipeline", width="stretch")
+                except Exception as e:
+                    # Fallback to text diagram
+                    st.code("""
+__start__
+    │
+    ▼
+┌─────────┐
+│  agent  │ ←── LLM decides tool calls
+└────┬────┘
+     │
+     ▼ (conditional)
+┌─────────┐
+│  tools  │ ←── Executes: search_web, extract_page_content, etc.
+└────┬────┘
+     │
+     └──────→ back to agent (loop)
+                    """, language="text")
+                    st.caption(f"Live diagram unavailable: {e}")
             except Exception as e:
-                st.warning(f"Could not load pipeline image: {e}")
+                st.warning(f"Could not load pipeline visualization: {e}")
         
         with col2:
             st.markdown("### How It Works")
@@ -978,7 +983,7 @@ K → °C: K - 273.15
                 # Display table
                 st.dataframe(
                     filtered_spec_df,
-                    use_container_width=True,
+                    width="stretch",
                     height=450,
                     hide_index=True,
                     column_config={
@@ -1089,7 +1094,7 @@ K → °C: K - 273.15
                 # Display table
                 st.dataframe(
                     filtered_df,
-                    use_container_width=True,
+                    width="stretch",
                     height=500,
                     hide_index=True,
                     column_config={
@@ -1163,7 +1168,7 @@ K → °C: K - 273.15
                     # Display with highlighting
                     st.dataframe(
                         comparison_df,
-                        use_container_width=True,
+                        width="stretch",
                         height=600,
                     )
                     

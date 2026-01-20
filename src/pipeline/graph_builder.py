@@ -1,286 +1,229 @@
 """
-Graph Builder - Main pipeline orchestration using LangGraph.
+Graph Builder - Simple, direct Neo4j pipeline.
 
-SUPPORTS TWO MODES:
-1. AGENTIC MODE (New!): Uses ReAct agent for autonomous decision-making
-2. PIPELINE MODE (Legacy): Uses fixed iteration pipeline
+STRICT LIMITS:
+- 10 competitors max
+- 10 products per competitor  
+- 10 specs per product
 
-The agentic mode is the recommended approach for better results.
-The AI makes decisions about what to search, when to extract specs, and when to stop.
+Graph Structure:
+    Honeywell (center)
+        ├── OFFERS_PRODUCT → SmartLine ST700 → HAS_SPEC → specs
+        ├── COMPETES_WITH → Competitor → OFFERS_PRODUCT → Product → HAS_SPEC → specs
 """
 
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Dict, List, TypedDict
-from pathlib import Path
-import argparse
+from typing import Any, Dict
+from neo4j import GraphDatabase
 
-from langgraph.graph import START, StateGraph
-
-from src.pipeline.query_node import search_node
-from src.pipeline.extract_node import extract_node
-from src.pipeline.llm_node import llm_state_node
-from src.pipeline.neo4j_write_node import write_node
-from src.pipeline.refine_query_node import refine_query_node
+from src.config.settings import get_neo4j_config
 
 
-class PipelineState(TypedDict, total=False):
-    """Shared state for the LangGraph pipeline."""
-    query: str
-    original_query: str
-    max_results: int
-    schema: Dict[str, Any]
-    results: List[Dict[str, Any]]
-    data: Dict[str, Any]
-    needs_refinement: bool
-    iteration: int
-    max_iterations: int
-    max_products_per_company: int
-    max_competitors: int
-    phase_attempts: Dict[str, Any]
-
-
-def should_continue(state: PipelineState) -> str:
-    """Decision function for pipeline mode."""
-    if state.get("needs_refinement", False):
-        return "search"
-    else:
-        return "write"
-
-
-def build_graph() -> Any:
-    """Build the LangGraph pipeline for PIPELINE MODE."""
-    graph = StateGraph(PipelineState)
-    
-    graph.add_node("search", search_node)
-    graph.add_node("extract", extract_node)
-    graph.add_node("llm", llm_state_node)
-    graph.add_node("refine", refine_query_node)
-    graph.add_node("write", write_node)
-    
-    graph.add_edge(START, "search")
-    graph.add_edge("search", "extract")
-    graph.add_edge("extract", "llm")
-    graph.add_edge("llm", "refine")
-    
-    graph.add_conditional_edges(
-        "refine",
-        should_continue,
-        {"search": "search", "write": "write"}
+def get_driver():
+    """Get Neo4j driver."""
+    cfg = get_neo4j_config()
+    return GraphDatabase.driver(
+        cfg.get("uri"),
+        auth=(cfg.get("user"), cfg.get("password"))
     )
-    
-    return graph.compile()
-
-
-def run_pipeline_mode(
-    query: str = "pressure transmitters process industries competitors specifications",
-    max_results: int = 1,
-    max_iterations: int = 50,
-    max_competitors: int = 5,
-    max_products_per_company: int = 1,
-) -> Dict[str, Any]:
-    """
-    Run the traditional pipeline mode.
-    
-    This mode uses fixed phases to collect:
-    1. Competitors
-    2. Products
-    3. Prices
-    4. Specifications
-    """
-    app = build_graph()
-    
-    schema_path = Path("src/schemas/schema.json")
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    
-    state: PipelineState = {
-        "query": query,
-        "original_query": query,
-        "max_results": max_results,
-        "schema": schema,
-        "iteration": 0,
-        "max_iterations": max_iterations,
-        "max_competitors": max_competitors,
-        "max_products_per_company": max_products_per_company,
-        "phase_attempts": {
-            "competitors": 0,
-            "products": {},
-            "prices": {},
-            "specs": {}
-        },
-    }
-    
-    print("="*80)
-    print("STARTING PIPELINE MODE")
-    print("="*80)
-    
-    result = app.invoke(state, {"recursion_limit": 500})
-    
-    print("\n" + "="*80)
-    print("PIPELINE COMPLETE")
-    print("="*80)
-    
-    return result.get("data", {})
-
-
-def run_agentic_mode(
-    target_product: str = "SmartLine ST700",
-    target_company: str = "Honeywell",
-    max_competitors: int = 5,
-    max_iterations: int = 30,
-    **kwargs,
-) -> Dict[str, Any]:
-    """
-    Run the AGENTIC mode using LangGraph agent pipeline.
-    
-    This is the RECOMMENDED mode for better results!
-    
-    The LangGraph agent:
-    - Uses tool nodes for actions (search, save, extract)
-    - Has conditional routing based on decisions
-    - Maintains state across the graph
-    - Makes autonomous decisions about what to do next
-    
-    Graph structure:
-        __start__ → agent → router → tools → agent (loop) → __end__
-    
-    Args:
-        incremental: If True, don't clear the database - add to existing data
-    """
-    from src.agents.langgraph_agent import run_langgraph_agent
-    from src.pipeline.neo4j_write_node import run_neo4j
-    from src.pipeline.cypher_node import to_merge_cypher
-    
-    # Check for incremental flag
-    incremental = kwargs.get("incremental", False)
-    
-    print("="*80)
-    print("🤖 STARTING LANGGRAPH AGENTIC MODE")
-    print(f"Target: {target_company} {target_product}")
-    print(f"Looking for {max_competitors} competitors")
-    if incremental:
-        print("📥 INCREMENTAL MODE - Adding to existing data")
-    print("="*80)
-    
-    # Reset Neo4j database before running (unless incremental mode)
-    if not incremental:
-        print("\n🗑️  Resetting Neo4j database...")
-        reset_neo4j()
-        print("✓ Database cleared\n")
-    else:
-        print("\n📥 Keeping existing database data (incremental mode)\n")
-    
-    # Run the LangGraph agent
-    data = run_langgraph_agent(
-        max_iterations=max_iterations,
-        max_competitors=max_competitors,
-    )
-    
-    # Write to Neo4j
-    cypher = to_merge_cypher(data)
-    print("\n[neo4j] Writing agent results to database...")
-    run_neo4j(cypher)
-    
-    print("\n" + "="*80)
-    print("🏁 LANGGRAPH AGENTIC MODE COMPLETE")
-    print("="*80)
-    
-    return data
 
 
 def reset_neo4j():
-    """Clear all nodes and relationships from Neo4j database."""
-    from neo4j import GraphDatabase
-    from src.config.settings import get_neo4j_config
-    
-    cfg = get_neo4j_config()
-    uri = cfg.get("uri")
-    user = cfg.get("user")
-    password = cfg.get("password")
-    
-    if not (uri and user and password):
-        print("[neo4j] Neo4j credentials not set - skipping reset")
-        return
-    
-    driver = GraphDatabase.driver(uri, auth=(user, password))
+    """Clear ALL nodes, relationships, and constraints."""
+    driver = get_driver()
     try:
         with driver.session() as session:
-            # Delete all nodes and relationships
+            # Drop all constraints
+            try:
+                constraints = session.run("SHOW CONSTRAINTS").data()
+                for c in constraints:
+                    name = c.get('name', '')
+                    if name:
+                        try:
+                            session.run(f"DROP CONSTRAINT {name}")
+                            print(f"[neo4j] Dropped constraint: {name}")
+                        except:
+                            pass
+            except:
+                pass
+            
+            # Delete everything
             session.run("MATCH (n) DETACH DELETE n")
-            print("[neo4j] All nodes and relationships deleted")
+            
+            # Verify deletion
+            count = session.run("MATCH (n) RETURN count(n) as c").single()["c"]
+            print(f"[neo4j] Database cleared. Node count: {count}")
     finally:
         driver.close()
 
 
-def main():
-    """Main entry point with mode selection."""
-    parser = argparse.ArgumentParser(
-        description="Competitive Intelligence Pipeline",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Run in AGENTIC mode (recommended):
-  python -m src.pipeline.graph_builder --mode agentic
+def count_nodes():
+    """Count nodes by type."""
+    driver = get_driver()
+    try:
+        with driver.session() as session:
+            query = """
+            MATCH (n) 
+            RETURN labels(n)[0] as label, count(n) as count
+            ORDER BY label
+            """
+            results = session.run(query)
+            counts = {r["label"]: r["count"] for r in results}
+            return counts
+    finally:
+        driver.close()
 
-  # Run in PIPELINE mode:
-  python -m src.pipeline.graph_builder --mode pipeline
 
-  # Custom parameters:
-  python -m src.pipeline.graph_builder --mode agentic --competitors 3 --iterations 20
-        """
-    )
+def write_to_neo4j(data: Dict[str, Any]):
+    """
+    Write data directly to Neo4j with simple Cypher.
     
-    parser.add_argument(
-        "--mode", 
-        choices=["agentic", "pipeline"],
-        default="agentic",
-        help="Execution mode: 'agentic' (recommended) or 'pipeline'"
-    )
-    parser.add_argument(
-        "--competitors",
-        type=int,
-        default=5,
-        help="Number of competitors to find (default: 5)"
-    )
-    parser.add_argument(
-        "--iterations",
-        type=int,
-        default=30,
-        help="Maximum iterations (default: 30 for agentic, 50 for pipeline)"
-    )
-    parser.add_argument(
-        "--product",
-        type=str,
-        default="SmartLine ST700",
-        help="Target Honeywell product (default: SmartLine ST700)"
-    )
-    parser.add_argument(
-        "--incremental",
-        action="store_true",
-        help="Incremental mode: add to existing data instead of clearing the database"
-    )
+    Includes evidence_ids and source_urls on relationships for human verification.
+    The Streamlit "Verify Data" tab uses these to show source evidence from ChromaDB.
+    """
+    driver = get_driver()
     
-    args = parser.parse_args()
+    competitors = data.get("competitors", {})
+    products = data.get("products", {})
+    specifications = data.get("specifications", {})
     
-    if args.mode == "agentic":
-        result = run_agentic_mode(
-            target_product=args.product,
-            max_competitors=args.competitors,
-            max_iterations=args.iterations,
-            incremental=args.incremental,
-        )
-    else:
-        result = run_pipeline_mode(
-            max_competitors=args.competitors,
-            max_iterations=args.iterations,
-        )
+    try:
+        with driver.session() as session:
+            # 1. Create Honeywell (center node)
+            session.run("""
+                MERGE (h:Company {name: 'Honeywell'})
+                SET h.is_baseline = true
+            """)
+            print("[neo4j] Created Honeywell")
+            
+            # 2. Create competitors and COMPETES_WITH relationships (with evidence)
+            for comp_name, comp_data in competitors.items():
+                safe_name = comp_name.replace("'", "").replace('"', '')
+                source_url = (comp_data.get("source_url", "") or "").replace("'", "")[:200]
+                evidence_ids = comp_data.get("evidence_ids", [])
+                evidence_str = json.dumps(evidence_ids[:10]) if evidence_ids else "[]"
+                
+                session.run(f"""
+                    MERGE (c:Company {{name: '{safe_name}'}})
+                    WITH c
+                    MATCH (h:Company {{name: 'Honeywell'}})
+                    MERGE (h)-[r:COMPETES_WITH]->(c)
+                    SET r.source_urls = ['{source_url}'],
+                        r.evidence_ids = {evidence_str}
+                """)
+            print(f"[neo4j] Created {len(competitors)} competitors with evidence links")
+            
+            # 3. Create products and OFFERS_PRODUCT relationships (with evidence)
+            product_count = 0
+            for prod_name, prod_data in products.items():
+                safe_prod = prod_name.replace("'", "").replace('"', '')[:100]
+                company = prod_data.get("company", "").replace("'", "").replace('"', '')
+                source_url = (prod_data.get("source_url", "") or "").replace("'", "")[:200]
+                evidence_ids = prod_data.get("evidence_ids", [])
+                evidence_str = json.dumps(evidence_ids[:10]) if evidence_ids else "[]"
+                
+                if company:
+                    session.run(f"""
+                        MERGE (p:Product {{name: '{safe_prod}'}})
+                        SET p.source_urls = ['{source_url}']
+                        WITH p
+                        MATCH (c:Company {{name: '{company}'}})
+                        MERGE (c)-[r:OFFERS_PRODUCT]->(p)
+                        SET r.source_urls = ['{source_url}'],
+                            r.evidence_ids = {evidence_str}
+                    """)
+                    product_count += 1
+            print(f"[neo4j] Created {product_count} products with evidence links")
+            
+            # 4. Create specs and HAS_SPEC relationships (with evidence)
+            spec_count = 0
+            for prod_name, specs in specifications.items():
+                safe_prod = prod_name.replace("'", "").replace('"', '')[:100]
+                
+                # Get evidence from the product
+                prod_data = products.get(prod_name, {})
+                source_url = (prod_data.get("source_url", "") or "").replace("'", "")[:200]
+                evidence_ids = prod_data.get("evidence_ids", [])
+                evidence_str = json.dumps(evidence_ids[:10]) if evidence_ids else "[]"
+                
+                for spec_type, spec_value in specs.items():
+                    safe_type = spec_type.replace("'", "").replace('"', '').replace('_', ' ').title()[:50]
+                    safe_value = str(spec_value).replace("'", "").replace('"', '').replace('\n', ' ')[:100]
+                    
+                    # SHOW THE VALUE in the name! e.g., "Accuracy: ±0.065%"
+                    spec_display = f"{safe_type}: {safe_value}"
+                    # Unique key per product to avoid cross-links
+                    spec_key = f"{safe_prod}|{spec_type}"
+                    
+                    session.run(f"""
+                        MERGE (s:Specification {{key: '{spec_key}'}})
+                        SET s.name = '{spec_display}',
+                            s.spec_type = '{safe_type}',
+                            s.value = '{safe_value}',
+                            s.product = '{safe_prod}'
+                        WITH s
+                        MATCH (p:Product {{name: '{safe_prod}'}})
+                        MERGE (p)-[r:HAS_SPEC]->(s)
+                        SET r.source_urls = ['{source_url}'],
+                            r.evidence_ids = {evidence_str}
+                    """)
+                    spec_count += 1
+            print(f"[neo4j] Created {spec_count} specifications with evidence links")
+            
+            # Verify final counts
+            counts = count_nodes()
+            print(f"\n[neo4j] FINAL COUNTS:")
+            for label, count in counts.items():
+                print(f"   {label}: {count}")
+                
+    finally:
+        driver.close()
+
+
+def run_pipeline(
+    target_product: str = "SmartLine ST700",
+    target_company: str = "Honeywell",
+    max_competitors: int = 10,
+    incremental: bool = False,
+) -> Dict[str, Any]:
+    """
+    Run the AGENTIC pipeline.
     
-    print("\n" + "="*80)
-    print("FINAL EXTRACTED DATA")
-    print("="*80)
-    print(json.dumps(result, indent=2))
+    The agent DECIDES what to do:
+    - Which searches to run
+    - Which pages to extract
+    - What data to save
+    - When to stop
+    """
+    from src.agents.agentic_agent import run_agent
+    
+    print("="*60)
+    print("🚀 COMPETITIVE INTELLIGENCE PIPELINE")
+    print(f"   Target: {target_company} {target_product}")
+    print(f"   Max competitors: {max_competitors}")
+    print("="*60)
+    
+    # Always reset unless incremental
+    if not incremental:
+        print("\n🗑️  Resetting Neo4j...")
+        reset_neo4j()
+    
+    # Run research
+    print("\n📊 Researching competitors...")
+    data = run_agent(max_competitors=max_competitors)
+    
+    # Write directly to Neo4j
+    print("\n📝 Writing to Neo4j...")
+    write_to_neo4j(data)
+    
+    print("\n" + "="*60)
+    print("✅ PIPELINE COMPLETE")
+    print("="*60)
+    
+    return data
 
 
 if __name__ == "__main__":
-    main()
+    run_pipeline(max_competitors=5)
