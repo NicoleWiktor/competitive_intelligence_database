@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.config.settings import get_neo4j_config
-from src.pipeline.chroma_store import find_best_evidence_for_relationship
+from src.pipeline.chroma_store import find_best_evidence_for_relationship, get_chunk_by_id
 from src.ontology.specifications import PRESSURE_TRANSMITTER_ONTOLOGY
 
 # =============================================================================
@@ -521,7 +521,8 @@ def main():
         "📚 Ontology",
         "📋 Specification Table", 
         "🔍 Compare Products",
-        "✅ Verify Data"
+        "✅ Verify Data",
+        "🎯 Customer Needs"
     ])
     
     # === TAB 1: KNOWLEDGE GRAPH ===
@@ -1235,6 +1236,28 @@ K → °C: K - 273.15
             with col4:
                 st.metric("Pending", len(pending_relationships))
             
+            # Evidence coverage breakdown
+            with_evidence = sum(1 for r in all_relationships if r['evidence_ids'])
+            with_sources = sum(1 for r in all_relationships if r['source_urls'])
+            
+            st.markdown("#### 📊 Evidence Coverage")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                pct_evidence = (with_evidence / len(all_relationships) * 100) if all_relationships else 0
+                st.metric("With Evidence IDs", f"{with_evidence}/{len(all_relationships)}", f"{pct_evidence:.0f}%")
+            with col2:
+                pct_sources = (with_sources / len(all_relationships) * 100) if all_relationships else 0
+                st.metric("With Source URLs", f"{with_sources}/{len(all_relationships)}", f"{pct_sources:.0f}%")
+            with col3:
+                # Count by relationship type
+                by_type = {}
+                for r in all_relationships:
+                    t = r['relationship_type']
+                    by_type[t] = by_type.get(t, 0) + 1
+                st.write("**By Type:**")
+                for t, count in sorted(by_type.items()):
+                    st.caption(f"• {t}: {count}")
+            
             st.markdown("---")
             
             if not pending_relationships:
@@ -1269,7 +1292,7 @@ K → °C: K - 273.15
                 with col4:
                     filter_type = st.selectbox(
                         "Filter",
-                        ["All", "COMPETES_WITH", "OFFERS_PRODUCT", "HAS_PRICE", "HAS_SPEC", "HAS_REVIEW"],
+                        ["All", "COMPETES_WITH", "OFFERS_PRODUCT", "HAS_SPEC", "ADDRESSES_NEED"],
                         label_visibility="collapsed"
                     )
                 
@@ -1302,44 +1325,241 @@ K → °C: K - 273.15
                             domain = rel['source_urls'][0].split('/')[2] if len(rel['source_urls'][0].split('/')) > 2 else 'source'
                             st.caption(f"📎 {domain[:20]}")
                     
-                    # Evidence expander
+                    # Evidence expander - show exact text + ONE source link
                     with st.expander("📄 View Evidence"):
-                        # Show stored snippet if present
-                        if rel.get('snippet'):
-                            st.write("**Stored snippet:**")
-                            st.info(rel['snippet'])
+                        chunk = None
                         
-                        # Show source URLs
-                        if rel.get('source_urls'):
-                            for u in rel['source_urls']:
-                                if _is_valid_http_url(u):
-                                    st.markdown(f"- [Source]({u})")
+                        # Strategy 1: Direct lookup by evidence_ids
+                        if rel['evidence_ids']:
+                            for eid in rel['evidence_ids'][:3]:
+                                direct_chunk = get_chunk_by_id(eid)
+                                if direct_chunk:
+                                    chunk = direct_chunk
+                                    break
                         
-                        # Try to fetch best matching chunk from Chroma
-                        chunk = find_best_evidence_for_relationship(
-                            source=rel['source_name'],
-                            relationship=rel['relationship_type'],
-                            target=rel['target_name'],
-                            evidence_ids=rel['evidence_ids']
-                        )
+                        # Strategy 2: Fall back to semantic search
+                        if not chunk:
+                            chunk = find_best_evidence_for_relationship(
+                                source=rel['source_name'],
+                                relationship=rel['relationship_type'],
+                                target=rel['target_name'],
+                                evidence_ids=rel['evidence_ids']
+                            )
                         
                         if chunk:
-                            distance = chunk.get('distance', 999)
-                            confidence = "🟢 High" if distance < 0.5 else "🟡 Medium" if distance < 1.0 else "🟠 Low"
-                            st.write("**Vector-retrieved evidence:**")
-                            st.info(chunk['document'][:500])
-                            st.caption(f"Confidence: {confidence} (distance: {distance:.3f})")
+                            # Show the EXACT TEXT from the source
+                            st.markdown("**📝 Evidence text:**")
+                            evidence_text = chunk['document']
+                            if len(evidence_text) > 500:
+                                st.info(evidence_text[:500] + "...")
+                            else:
+                                st.info(evidence_text)
                             
-                            chunk_url = chunk['metadata'].get('source_url')
+                            # Show ONE source link
+                            chunk_url = chunk.get('metadata', {}).get('source_url', '')
                             if _is_valid_http_url(chunk_url):
-                                st.markdown(f"[View Source]({chunk_url})")
+                                st.markdown(f"**🔗 Source:** [{chunk_url[:60]}...]({chunk_url})")
                         else:
-                            st.error("⚠️ No supporting evidence found. Consider rejecting.")
+                            # Fallback to stored URL if no ChromaDB evidence
+                            if rel.get('source_urls') and rel['source_urls'][0]:
+                                st.warning("No text evidence in ChromaDB")
+                                st.markdown(f"**🔗 Source:** [{rel['source_urls'][0][:60]}...]({rel['source_urls'][0]})")
+                            else:
+                                st.error("⚠️ No evidence found. Run pipeline to regenerate.")
                 
             st.markdown("---")
         
         except Exception as e:
             st.warning(f"⚠️ Could not load verification data: {str(e)}")
+    
+    # === TAB 7: CUSTOMER NEEDS ===
+    with tabs[6]:
+        st.markdown("""
+        <div class="section-header">
+            <h2>🎯 Customer Needs & Mapping</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("Comprehensive industry needs research from multiple sources.")
+        
+        # Load and display the industry report
+        try:
+            import os
+            report_path = os.path.join(os.path.dirname(__file__), "industry_report.json")
+            if os.path.exists(report_path):
+                with open(report_path, "r") as f:
+                    report_data = json.load(f)
+                
+                # Report header
+                st.markdown("### 📊 Industry Needs Report")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Sources Analyzed", len(report_data.get("sources", [])))
+                with col2:
+                    st.metric("Industry", report_data.get("industry", "N/A"))
+                with col3:
+                    st.metric("Needs Extracted", report_data.get("needs_count", 0))
+                with col4:
+                    st.metric("Mappings Created", report_data.get("mappings_count", 0))
+                
+                # Full report in expandable section
+                with st.expander("📄 View Full Report", expanded=True):
+                    report_text = report_data.get("report", "No report available.")
+                    st.markdown(report_text)
+                
+                # Sources
+                with st.expander("🔗 Sources Used"):
+                    for i, src in enumerate(report_data.get("sources", []), 1):
+                        st.markdown(f"{i}. [{src[:60]}...]({src})")
+                
+                st.markdown("---")
+            else:
+                st.info("📝 No industry report generated yet. Run the pipeline to generate a comprehensive report.")
+        except Exception as e:
+            st.warning(f"Could not load report: {e}")
+        
+        st.markdown("### 🎯 Extracted Needs & Mappings")
+        
+        try:
+            driver = get_neo4j_driver()
+            with driver.session() as session:
+                # Fetch customer needs with evidence IDs
+                needs_result = session.run("""
+                    MATCH (n:CustomerNeed)
+                    OPTIONAL MATCH (p:Product)-[r:ADDRESSES_NEED]->(n)
+                    RETURN 
+                        n.name as need,
+                        n.description as description,
+                        n.industry as industry,
+                        n.source_urls as sources,
+                        n.evidence_ids as evidence_ids,
+                        collect(DISTINCT {product: p.name, spec: r.via_spec, explanation: r.explanation}) as mappings
+                    ORDER BY n.name
+                """)
+                
+                needs = list(needs_result)
+                
+                if needs:
+                    # Metrics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{len(needs)}</div>
+                            <div class="metric-label">Customer Needs</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        total_mappings = sum(len([m for m in n['mappings'] if m.get('product')]) for n in needs)
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{total_mappings}</div>
+                            <div class="metric-label">Need-Product Mappings</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col3:
+                        industries = set(n['industry'] for n in needs if n['industry'])
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{len(industries) if industries else 1}</div>
+                            <div class="metric-label">Industries</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # Display each need
+                    for need in needs:
+                        with st.expander(f"🎯 {need['need']}", expanded=False):
+                            col1, col2 = st.columns([2, 1])
+                            
+                            with col1:
+                                st.markdown(f"**Description:** {need['description'] or 'No description'}")
+                                
+                                # Show mappings
+                                mappings = [m for m in need['mappings'] if m.get('product')]
+                                if mappings:
+                                    st.markdown("**Products addressing this need:**")
+                                    for m in mappings:
+                                        st.markdown(f"- **{m['product']}** via `{m['spec']}`: {m['explanation'] or ''}")
+                                else:
+                                    st.info("No products mapped to this need yet.")
+                            
+                            with col2:
+                                st.markdown(f"**Industry:** {need['industry'] or 'General'}")
+                                
+                                # Show WHERE the customer need requirement came from
+                                # (the industry research pages, NOT product pages)
+                                need_name = need.get('need', '')
+                                report_sources = need.get('sources') or []  # URLs from industry research
+                                
+                                # Search for evidence ONLY within the report source URLs
+                                chunk = None
+                                if report_sources:
+                                    # Semantic search with need name as query
+                                    chunk = find_best_evidence_for_relationship(
+                                        source="industry requirement",
+                                        relationship="states",
+                                        target=need_name,
+                                        evidence_ids=need.get('evidence_ids') or []
+                                    )
+                                    
+                                    # Verify the chunk is from a report source, not a product page
+                                    if chunk:
+                                        chunk_url = chunk.get('metadata', {}).get('source_url', '')
+                                        # Check if this URL is from our report sources
+                                        is_from_report = any(
+                                            chunk_url and src and (chunk_url in src or src in chunk_url)
+                                            for src in report_sources
+                                        )
+                                        if not is_from_report:
+                                            chunk = None  # Reject - it's from a product page
+                                
+                                if chunk:
+                                    st.markdown("**📄 Source Evidence (Industry Research):**")
+                                    evidence_text = chunk.get('document', '')
+                                    if len(evidence_text) > 400:
+                                        st.info(evidence_text[:400] + "...")
+                                    else:
+                                        st.info(evidence_text)
+                                    src_url = chunk.get('metadata', {}).get('source_url', '')
+                                    if src_url and _is_valid_http_url(src_url):
+                                        st.markdown(f"[View Source]({src_url})")
+                                elif report_sources:
+                                    # Fall back to just showing the report source URLs
+                                    st.markdown("**📄 Sources (Industry Research):**")
+                                    for src in report_sources[:2]:
+                                        if src and _is_valid_http_url(src):
+                                            st.markdown(f"- [{src[:50]}...]({src})")
+                    
+                    # Summary table
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown("### 📊 Needs Summary Table")
+                    
+                    table_data = []
+                    for need in needs:
+                        mappings = [m for m in need['mappings'] if m.get('product')]
+                        table_data.append({
+                            'Need': need['need'],
+                            'Industry': need['industry'] or 'General',
+                            'Description': (need['description'] or '')[:100],
+                            'Products Mapped': len(mappings),
+                            'Products': ', '.join([m['product'] for m in mappings][:3]) or '-'
+                        })
+                    
+                    df = pd.DataFrame(table_data)
+                    st.dataframe(df, use_container_width=True)
+                    
+                else:
+                    st.info("No customer needs found. Run the pipeline with customer needs research enabled.")
+            
+            driver.close()
+            
+        except Exception as e:
+            st.warning(f"⚠️ Could not load customer needs: {str(e)}")
 
 
 if __name__ == "__main__":

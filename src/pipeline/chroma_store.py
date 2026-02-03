@@ -91,16 +91,19 @@ def chunk_and_store(
     metadatas = []
     
     for i, chunk_text in enumerate(chunks):
-        # Create unique ID: URL + chunk index + timestamp
-        chunk_id = f"{source_url}__chunk_{i}__{timestamp}"
+        # Create unique ID: hash of URL + chunk index + timestamp (safe for JSON/Cypher)
+        import hashlib
+        url_hash = hashlib.md5(source_url.encode()).hexdigest()[:12]
+        chunk_id = f"chunk_{url_hash}_{i}_{timestamp.replace(':', '-').replace('.', '-')}"
         chunk_ids.append(chunk_id)
         documents.append(chunk_text)
+        # ChromaDB doesn't accept None values - ensure all are strings
         metadatas.append({
-            "source_url": source_url,
+            "source_url": source_url or "",
             "chunk_index": i,
             "total_chunks": len(chunks),
-            "query": query,
-            "page_title": page_title,
+            "query": query or "",
+            "page_title": page_title or "",
             "timestamp": timestamp,
             "chunk_size": len(chunk_text)
         })

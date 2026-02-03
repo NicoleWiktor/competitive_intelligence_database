@@ -172,6 +172,76 @@ def write_to_neo4j(data: Dict[str, Any]):
                     spec_count += 1
             print(f"[neo4j] Created {spec_count} specifications with evidence links")
             
+            # 5. Create CustomerNeed nodes PER PRODUCT (each product gets its own need node)
+            # This avoids multiple products pointing to the same need node
+            customer_needs = data.get("customer_needs", {})
+            need_mappings = data.get("need_mappings", [])
+            
+            # Create CustomerNeed nodes only for products that have mappings
+            # Each product gets its own copy of the need
+            mapping_count = 0
+            created_needs = set()
+            
+            for mapping in need_mappings:
+                need_name = mapping.get("need", "").replace("'", "").replace('"', '')
+                product = mapping.get("product", "").replace("'", "").replace('"', '')
+                spec = mapping.get("spec", "").replace("'", "")
+                spec_value = mapping.get("spec_value", "").replace("'", "").replace('"', '')[:100]
+                need_threshold = mapping.get("need_threshold", "").replace("'", "")[:50]
+                explanation = mapping.get("explanation", "").replace("'", "").replace('"', '')[:200]
+                
+                if not need_name or not product:
+                    continue
+                
+                # Get need data
+                need_data = customer_needs.get(need_name, {})
+                spec_type = (need_data.get("spec_type", "") or "").replace("'", "")[:50]
+                threshold = (need_data.get("threshold", "") or "").replace("'", "")[:50]
+                
+                # Handle both source_urls (list) and source_url (string) for backwards compat
+                source_urls = need_data.get("source_urls", [])
+                if not source_urls:
+                    single_url = need_data.get("source_url", "")
+                    source_urls = [single_url] if single_url else []
+                # Clean and format URLs for Neo4j
+                clean_urls = [u.replace("'", "")[:200] for u in source_urls[:5]]  # Max 5 URLs
+                source_urls_str = json.dumps(clean_urls)
+                
+                evidence_ids = need_data.get("evidence_ids", [])
+                evidence_str = json.dumps(evidence_ids[:20]) if evidence_ids else "[]"  # More evidence
+                
+                # Create a UNIQUE CustomerNeed node for this product
+                # Key includes product name to make it unique per product
+                need_key = f"{product}|{need_name}"
+                safe_need_display = need_name[:100]
+                
+                session.run(f"""
+                    MERGE (n:CustomerNeed {{key: '{need_key}'}})
+                    SET n.name = '{safe_need_display}',
+                        n.spec_type = '{spec_type}',
+                        n.threshold = '{threshold}',
+                        n.source_urls = {source_urls_str},
+                        n.evidence_ids = {evidence_str}
+                """)
+                created_needs.add(need_key)
+                
+                # Create ADDRESSES_NEED relationship (with evidence for verification!)
+                session.run(f"""
+                    MATCH (p:Product {{name: '{product}'}})
+                    MATCH (n:CustomerNeed {{key: '{need_key}'}})
+                    MERGE (p)-[r:ADDRESSES_NEED]->(n)
+                    SET r.via_spec = '{spec}',
+                        r.spec_value = '{spec_value}',
+                        r.need_threshold = '{need_threshold}',
+                        r.explanation = '{explanation}',
+                        r.source_urls = {source_urls_str},
+                        r.evidence_ids = {evidence_str}
+                """)
+                mapping_count += 1
+            
+            print(f"[neo4j] Created {len(created_needs)} customer needs (one per product)")
+            print(f"[neo4j] Created {mapping_count} ADDRESSES_NEED relationships")
+            
             # Verify final counts
             counts = count_nodes()
             print(f"\n[neo4j] FINAL COUNTS:")
@@ -186,6 +256,8 @@ def run_pipeline(
     target_product: str = "SmartLine ST700",
     target_company: str = "Honeywell",
     max_competitors: int = 10,
+    industry: str = "process industries",
+    max_iterations: int = 25,
     incremental: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -202,6 +274,7 @@ def run_pipeline(
     print("="*60)
     print("🚀 COMPETITIVE INTELLIGENCE PIPELINE")
     print(f"   Target: {target_company} {target_product}")
+    print(f"   Industry: {industry}")
     print(f"   Max competitors: {max_competitors}")
     print("="*60)
     
@@ -212,11 +285,26 @@ def run_pipeline(
     
     # Run research
     print("\n📊 Researching competitors...")
-    data = run_agent(max_competitors=max_competitors)
+    data = run_agent(max_competitors=max_competitors, industry=industry, max_iterations=max_iterations)
     
     # Write directly to Neo4j
     print("\n📝 Writing to Neo4j...")
     write_to_neo4j(data)
+    
+    # Save report to file for Streamlit
+    if data.get("industry_needs_report"):
+        report_data = {
+            "report": data.get("industry_needs_report", ""),
+            "sources": data.get("report_sources", []),
+            "industry": industry,
+            "needs_count": len(data.get("customer_needs", {})),
+            "mappings_count": len(data.get("need_mappings", []))
+        }
+        import os
+        report_path = os.path.join(os.path.dirname(__file__), "..", "..", "industry_report.json")
+        with open(report_path, "w") as f:
+            json.dump(report_data, f, indent=2)
+        print(f"📄 Report saved to industry_report.json")
     
     print("\n" + "="*60)
     print("✅ PIPELINE COMPLETE")

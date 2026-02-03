@@ -18,6 +18,8 @@ The system uses a LangGraph StateGraph with two nodes (`agent` and `tools`) in a
 | `extract_page_content` | Tavily page extraction + stores chunks in ChromaDB |
 | `save_competitor` | Saves company with evidence link |
 | `save_product` | Saves product + specs with evidence link |
+| `research_industry_needs` | Searches 8+ sources, generates comprehensive needs report |
+| `map_needs_from_report` | Extracts needs from report and maps to products |
 | `get_current_progress` | Returns current research status |
 | `finish_research` | Signals completion |
 
@@ -26,14 +28,26 @@ The system uses a LangGraph StateGraph with two nodes (`agent` and `tools`) in a
 | Store | Purpose |
 |-------|---------|
 | **ChromaDB** | Raw text chunks from web pages (evidence for verification) |
-| **Neo4j** | Structured knowledge graph (Companies, Products, Specifications) |
+| **Neo4j** | Structured knowledge graph (Companies, Products, Specifications, CustomerNeeds) |
 
 ## How It Works
 
+**Agent Loop:**
 1. LLM receives the conversation history and decides which tools to call
 2. If LLM returns tool calls → execute them, add results to conversation, go back to step 1
 3. If LLM returns no tool calls (or calls `finish_research`) → end
 4. Final data written to Neo4j
+
+**Research Strategy (Two Phases):**
+- **Phase 1**: Find competitors and their products with specs
+- **Phase 2**: Generate comprehensive industry needs report (from 8+ sources), then map needs to product specs
+
+**Graph Structure:**
+```
+Honeywell ─COMPETES_WITH→ Competitor ─OFFERS_PRODUCT→ Product ─HAS_SPEC→ Specification
+                                                          │
+                                                          └─ADDRESSES_NEED→ CustomerNeed
+```
 
 
 ## Setup
@@ -75,11 +89,24 @@ NEO4J_PASSWORD=your_password
 ### Run the Pipeline
 
 ```bash
+# Default: 5 competitors, 25 iterations, process industries
+python main.py
+
 # Specify number of competitors (max 10)
 python main.py --competitors 10
 
+# Specify target industry
+python main.py --industry "oil and gas"
+python main.py --industry "chemical processing"
+
+# Limit agent iterations (default 25)
+python main.py --iterations 15
+
 # Keep existing data (incremental mode)
 python main.py --competitors 5 --incremental
+
+# Combine options
+python main.py --competitors 5 --industry "oil and gas" --iterations 20
 ```
 
 ### Launch Dashboard
@@ -93,16 +120,10 @@ streamlit run streamlit_app.py
 
 ### Verify Evidence
 
-```bash
-# Show ChromaDB stats
-python verify_evidence.py --stats
-
-# Search evidence
-python verify_evidence.py --search "Emerson 3051S accuracy"
-
-# Get specific chunk
-python verify_evidence.py <chunk_id>
-```
+Evidence verification is done through the Streamlit dashboard's **"✅ Verify Data"** tab, which:
+- Shows all relationships from Neo4j
+- Retrieves original source evidence from ChromaDB
+- Displays the exact text and source URL for human verification
 
 
 ## Streamlit Dashboard Features
@@ -115,5 +136,7 @@ python verify_evidence.py <chunk_id>
 | 📋 Specification Table | All products and their specs in a table |
 | 🔍 Compare Products | Side-by-side product comparison |
 | ✅ Verify Data | Human verification with ChromaDB evidence |
+| 📊 Industry Needs Report | Full report generated from 8+ sources |
+| 🎯 Customer Needs | Extracted needs and their product mappings |
 
 
