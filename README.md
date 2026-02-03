@@ -89,24 +89,7 @@ NEO4J_PASSWORD=your_password
 ### Run the Pipeline
 
 ```bash
-# Default: 5 competitors, 25 iterations, process industries
-python main.py
-
-# Specify number of competitors (max 10)
-python main.py --competitors 10
-
-# Specify target industry
-python main.py --industry "oil and gas"
-python main.py --industry "chemical processing"
-
-# Limit agent iterations (default 25)
-python main.py --iterations 15
-
-# Keep existing data (incremental mode)
-python main.py --competitors 5 --incremental
-
-# Combine options
-python main.py --competitors 5 --industry "oil and gas" --iterations 20
+python main.py --iterations 20 --industry "oil and gas"
 ```
 
 ### Launch Dashboard
