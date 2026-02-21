@@ -1,0 +1,209 @@
+{
+  "customer_requirements": [
+    {
+      "name": "Accuracy \u00b10.075% for custody transfer",
+      "importance": 5,
+      "spec_type": "accuracy"
+    },
+    {
+      "name": "Pressure range 0-15000 psi for wellhead applications",
+      "importance": 4,
+      "spec_type": "pressure_range"
+    },
+    {
+      "name": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+      "importance": 4,
+      "spec_type": "temperature_range"
+    },
+    {
+      "name": "Robust construction for corrosive fluids",
+      "importance": 3,
+      "spec_type": "material_selection"
+    },
+    {
+      "name": "Certification ATEX Zone 1 for hazardous areas",
+      "importance": 4,
+      "spec_type": "certification"
+    },
+    {
+      "name": "Output signal 4-20 mA or digital protocols for process control",
+      "importance": 4,
+      "spec_type": "output_signal"
+    },
+    {
+      "name": "Easy installation and maintenance for minimal downtime",
+      "importance": 3,
+      "spec_type": "installation_guidelines"
+    },
+    {
+      "name": "Overpressure rating 2x maximum operating pressure for safety",
+      "importance": 4,
+      "spec_type": "overpressure_rating"
+    }
+  ],
+  "technical_specifications": [
+    "accuracy",
+    "pressure_range",
+    "temperature_range",
+    "material_selection",
+    "certification",
+    "output_signal",
+    "installation_guidelines",
+    "overpressure_rating"
+  ],
+  "relationship_matrix": {
+    "Accuracy \u00b10.075% for custody transfer": {
+      "accuracy": 9,
+      "pressure_range": 0,
+      "temperature_range": 0,
+      "material_selection": 0,
+      "certification": 0,
+      "output_signal": 0,
+      "installation_guidelines": 0,
+      "overpressure_rating": 0
+    },
+    "Pressure range 0-15000 psi for wellhead applications": {
+      "accuracy": 0,
+      "pressure_range": 9,
+      "temperature_range": 0,
+      "material_selection": 0,
+      "certification": 0,
+      "output_signal": 0,
+      "installation_guidelines": 0,
+      "overpressure_rating": 3
+    },
+    "Temperature -40\u00b0C to 85\u00b0C for harsh environments": {
+      "accuracy": 0,
+      "pressure_range": 0,
+      "temperature_range": 9,
+      "material_selection": 0,
+      "certification": 0,
+      "output_signal": 0,
+      "installation_guidelines": 0,
+      "overpressure_rating": 0
+    },
+    "Robust construction for corrosive fluids": {
+      "accuracy": 0,
+      "pressure_range": 0,
+      "temperature_range": 0,
+      "material_selection": 9,
+      "certification": 0,
+      "output_signal": 0,
+      "installation_guidelines": 0,
+      "overpressure_rating": 0
+    },
+    "Certification ATEX Zone 1 for hazardous areas": {
+      "accuracy": 0,
+      "pressure_range": 0,
+      "temperature_range": 0,
+      "material_selection": 0,
+      "certification": 9,
+      "output_signal": 0,
+      "installation_guidelines": 0,
+      "overpressure_rating": 0
+    },
+    "Output signal 4-20 mA or digital protocols for process control": {
+      "accuracy": 0,
+      "pressure_range": 0,
+      "temperature_range": 0,
+      "material_selection": 0,
+      "certification": 0,
+      "output_signal": 9,
+      "installation_guidelines": 0,
+      "overpressure_rating": 0
+    },
+    "Easy installation and maintenance for minimal downtime": {
+      "accuracy": 0,
+      "pressure_range": 0,
+      "temperature_range": 0,
+      "material_selection": 0,
+      "certification": 0,
+      "output_signal": 0,
+      "installation_guidelines": 9,
+      "overpressure_rating": 0
+    },
+    "Overpressure rating 2x maximum operating pressure for safety": {
+      "accuracy": 0,
+      "pressure_range": 3,
+      "temperature_range": 0,
+      "material_selection": 0,
+      "certification": 0,
+      "output_signal": 0,
+      "installation_guidelines": 0,
+      "overpressure_rating": 9
+    }
+  },
+  "competitive_assessment": {
+    "Rosemount 2051": {
+      "Accuracy \u00b10.075% for custody transfer": 4,
+      "Pressure range 0-15000 psi for wellhead applications": 2,
+      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 4,
+      "Robust construction for corrosive fluids": 2,
+      "Certification ATEX Zone 1 for hazardous areas": 2,
+      "Output signal 4-20 mA or digital protocols for process control": 5,
+      "Easy installation and maintenance for minimal downtime": 3,
+      "Overpressure rating 2x maximum operating pressure for safety": 2
+    },
+    "2600T": {
+      "Accuracy \u00b10.075% for custody transfer": 4,
+      "Pressure range 0-15000 psi for wellhead applications": 2,
+      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 4,
+      "Robust construction for corrosive fluids": 2,
+      "Certification ATEX Zone 1 for hazardous areas": 2,
+      "Output signal 4-20 mA or digital protocols for process control": 5,
+      "Easy installation and maintenance for minimal downtime": 3,
+      "Overpressure rating 2x maximum operating pressure for safety": 1
+    },
+    "Rosemount 3051": {
+      "Accuracy \u00b10.075% for custody transfer": 4,
+      "Pressure range 0-15000 psi for wellhead applications": 2,
+      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 4,
+      "Robust construction for corrosive fluids": 2,
+      "Certification ATEX Zone 1 for hazardous areas": 2,
+      "Output signal 4-20 mA or digital protocols for process control": 5,
+      "Easy installation and maintenance for minimal downtime": 3,
+      "Overpressure rating 2x maximum operating pressure for safety": 1
+    },
+    "EJA430E": {
+      "Accuracy \u00b10.075% for custody transfer": 4,
+      "Pressure range 0-15000 psi for wellhead applications": 2,
+      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 4,
+      "Robust construction for corrosive fluids": 2,
+      "Certification ATEX Zone 1 for hazardous areas": 2,
+      "Output signal 4-20 mA or digital protocols for process control": 5,
+      "Easy installation and maintenance for minimal downtime": 3,
+      "Overpressure rating 2x maximum operating pressure for safety": 1
+    },
+    "S-20": {
+      "Accuracy \u00b10.075% for custody transfer": 3,
+      "Pressure range 0-15000 psi for wellhead applications": 1,
+      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 3,
+      "Robust construction for corrosive fluids": 2,
+      "Certification ATEX Zone 1 for hazardous areas": 1,
+      "Output signal 4-20 mA or digital protocols for process control": 3,
+      "Easy installation and maintenance for minimal downtime": 3,
+      "Overpressure rating 2x maximum operating pressure for safety": 1
+    },
+    "Deltabar PMD55B": {
+      "Accuracy \u00b10.075% for custody transfer": 5,
+      "Pressure range 0-15000 psi for wellhead applications": 1,
+      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 3,
+      "Robust construction for corrosive fluids": 2,
+      "Certification ATEX Zone 1 for hazardous areas": 1,
+      "Output signal 4-20 mA or digital protocols for process control": 4,
+      "Easy installation and maintenance for minimal downtime": 3,
+      "Overpressure rating 2x maximum operating pressure for safety": 1
+    }
+  },
+  "target_values": {
+    "accuracy": "\u00b10.04%",
+    "pressure_range": "0-15000 psi",
+    "temperature_range": "-40\u00b0C to 120\u00b0C",
+    "material_selection": "Compatibility with corrosive fluids",
+    "certification": "ATEX Zone 1",
+    "output_signal": "4-20 mA HART",
+    "installation_guidelines": "Proper impulse line routing and accessibility for maintenance",
+    "overpressure_rating": "2x the maximum operating pressure"
+  },
+  "summary": "The competitive landscape shows that while several products meet the accuracy requirement for custody transfer, only the Deltabar PMD55B meets the \u00b10.075% accuracy threshold. Most products fall short in pressure range capabilities, with none reaching the desired 0-15000 psi. Temperature ranges vary, with some products exceeding the -40\u00b0C to 85\u00b0C requirement. The output signal compatibility is strong across the board, particularly with HART protocols. Overall, the Deltabar PMD55B stands out for its accuracy, but there is a significant opportunity for improvement in pressure range specifications."
+}

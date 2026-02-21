@@ -18,6 +18,8 @@ The system uses a LangGraph StateGraph with two nodes (`agent` and `tools`) in a
 | `extract_page_content` | Tavily page extraction + stores chunks in ChromaDB |
 | `save_competitor` | Saves company with evidence link |
 | `save_product` | Saves product + specs with evidence link |
+| `research_customer_segments` | Finds customer groups in industry (LLM generates queries, stores evidence) |
+| `map_segments_to_products` | Maps which products serve which customer segments |
 | `research_industry_needs` | Searches 8+ sources, generates comprehensive needs report |
 | `map_needs_from_report` | Extracts needs from report and maps to products |
 | `get_current_progress` | Returns current research status |
@@ -28,7 +30,7 @@ The system uses a LangGraph StateGraph with two nodes (`agent` and `tools`) in a
 | Store | Purpose |
 |-------|---------|
 | **ChromaDB** | Raw text chunks from web pages (evidence for verification) |
-| **Neo4j** | Structured knowledge graph (Companies, Products, Specifications, CustomerNeeds) |
+| **Neo4j** | Structured knowledge graph (Companies, Products, Specifications, CustomerNeeds, CustomerSegments) |
 
 ## How It Works
 
@@ -38,15 +40,18 @@ The system uses a LangGraph StateGraph with two nodes (`agent` and `tools`) in a
 3. If LLM returns no tool calls (or calls `finish_research`) → end
 4. Final data written to Neo4j
 
-**Research Strategy (Two Phases):**
+**Research Strategy (Three Phases):**
 - **Phase 1**: Find competitors and their products with specs
-- **Phase 2**: Generate comprehensive industry needs report (from 8+ sources), then map needs to product specs
+- **Phase 2**: Research customer segments (who buys pressure transmitters) and map products to segments
+- **Phase 3**: Generate comprehensive industry needs report (from 8+ sources), then map needs to product specs
 
 **Graph Structure:**
 ```
 Honeywell ─COMPETES_WITH→ Competitor ─OFFERS_PRODUCT→ Product ─HAS_SPEC→ Specification
                                                           │
-                                                          └─ADDRESSES_NEED→ CustomerNeed
+                                                          ├─ADDRESSES_NEED→ CustomerNeed
+                                                          │
+                                                          └─ADDRESSES_CUSTOMER_SEGMENT→ CustomerSegment
 ```
 
 
@@ -119,7 +124,7 @@ Evidence verification is done through the Streamlit dashboard's **"✅ Verify Da
 | 📋 Specification Table | All products and their specs in a table |
 | 🔍 Compare Products | Side-by-side product comparison |
 | ✅ Verify Data | Human verification with ChromaDB evidence |
-| 📊 Industry Needs Report | Full report generated from 8+ sources |
-| 🎯 Customer Needs | Extracted needs and their product mappings |
+| 🎯 Customer Needs | Industry needs report and product mappings |
+| 👥 Customer Segments | Customer groups with evidence and product mappings |
 
 

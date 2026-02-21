@@ -127,14 +127,20 @@ class ToolState:
         self.evidence_map: Dict[str, List[str]] = {}
         self.industry_needs_report: str = ""  # Comprehensive report from multiple sources
         self.report_sources: List[str] = []  # URLs used to generate the report
+        self.customer_segments: List[Dict] = []  # [{name, description, evidence_text, source_url, evidence_ids}]
+        self.segments_sources: List[str] = []  # URLs used to find customer segments
+        self.segment_mappings: List[Dict] = []  # [{segment, product, reason, evidence_ids}]
         self.finished: bool = False
     
     def summary(self) -> str:
         report_status = "✅ Generated" if self.industry_needs_report else "❌ Not yet"
+        segments_status = f"{len(self.customer_segments)} found" if self.customer_segments else "❌ Not yet"
+        segment_mappings_status = f"{len(self.segment_mappings)} mappings" if self.segment_mappings else "❌ Not yet"
         return f"""Current Progress:
 - Competitors found: {len(self.competitors)} ({list(self.competitors.keys())[:5]})
 - Products found: {len(self.products)}
 - Specs collected: {sum(len(s) for s in self.specifications.values())}
+- Customer segments: {segments_status} ({segment_mappings_status})
 - Industry needs report: {report_status} ({len(self.report_sources)} sources)
 - Customer needs extracted: {len(self.customer_needs)}
 - Need-to-product mappings: {len(self.need_mappings)}
@@ -484,13 +490,46 @@ def research_industry_needs(industry: str) -> str:
     client = get_tavily()
     from src.pipeline.chroma_store import chunk_and_store, get_chunk_by_id
     
-    # Multiple search queries to get diverse perspectives
-    search_queries = [
-        f"{industry} pressure transmitter selection criteria requirements",
-        f"{industry} instrumentation challenges problems pain points",
-        f"{industry} pressure measurement accuracy requirements why",
-        f"{industry} equipment reliability failure causes consequences",
-    ]
+    # LLM generates search queries based on the industry (agentic approach)
+    llm = get_llm()
+    query_prompt = f"""You are researching customer needs for pressure transmitters in the {industry} industry.
+
+Generate 5-6 diverse search queries that will help find:
+- Industry-specific challenges and pain points
+- Technical requirements (accuracy, pressure ranges, certifications)
+- Equipment selection criteria
+- Real-world application requirements
+- Regulatory/safety requirements
+
+Return ONLY a JSON array of search query strings. Example:
+["query 1", "query 2", "query 3", "query 4", "query 5"]
+
+Make queries specific to {industry} - don't be generic."""
+
+    print(f"   🤖 LLM generating search queries for {industry}...")
+    try:
+        query_response = llm.invoke(query_prompt)
+        query_content = query_response.content.strip()
+        
+        # Extract JSON array
+        if "```json" in query_content:
+            query_content = query_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in query_content:
+            query_content = query_content.split("```")[1].split("```")[0].strip()
+        
+        search_queries = json.loads(query_content)
+        print(f"   ✅ LLM generated {len(search_queries)} search queries")
+        for i, q in enumerate(search_queries):
+            print(f"      {i+1}. {q}")
+    except Exception as e:
+        print(f"   ⚠️ Could not generate queries, using fallback: {e}")
+        # Fallback to basic queries if LLM fails
+        search_queries = [
+            f"{industry} pressure transmitter requirements specifications",
+            f"{industry} instrumentation challenges",
+            f"{industry} measurement accuracy requirements",
+            f"{industry} equipment selection criteria",
+        ]
     
     all_urls = []
     for query in search_queries:
@@ -881,6 +920,426 @@ def map_need_to_product(
     return f"Mapped: '{need}' (threshold: {need_threshold}) → '{product}' (spec: {actual_spec_key}={actual_value}). Explanation: {explanation[:100]}"
 
 
+@tool
+def research_customer_segments(industry: str) -> str:
+    """
+    Research and identify customer segments/groups in a specific industry.
+    This tool:
+    1. Uses LLM to generate targeted search queries
+    2. Searches the web and extracts content from multiple sources
+    3. LLM analyzes content to identify distinct customer segments
+    4. Each segment is stored with evidence (exact text + source URL)
+    
+    Args:
+        industry: The target industry (e.g., "oil and gas", "pharmaceutical", "chemical processing")
+    
+    Returns:
+        Summary of customer segments found with their sources.
+    """
+    global _tool_state
+    
+    if _tool_state.customer_segments:
+        return f"Customer segments already researched. Found {len(_tool_state.customer_segments)} segments from {len(_tool_state.segments_sources)} sources."
+    
+    print(f"👥 AGENT DECIDED: research_customer_segments('{industry}')")
+    
+    client = get_tavily()
+    llm = get_llm()
+    from src.pipeline.chroma_store import chunk_and_store
+    
+    # Step 1: LLM generates search queries
+    query_prompt = f"""You are researching customer segments for pressure transmitters in the {industry} industry.
+
+Generate 4-5 search queries to find information about:
+- Who buys/uses pressure transmitters in {industry}
+- Different types of companies/operations in {industry} that need pressure measurement
+- Market segments and customer categories
+- End users vs distributors vs OEMs
+
+Return ONLY a JSON array of search query strings. Be specific to {industry}.
+Example: ["oil and gas upstream customer segments", "refinery instrumentation buyers"]"""
+
+    print(f"   🤖 LLM generating search queries...")
+    try:
+        query_response = llm.invoke(query_prompt)
+        query_content = query_response.content.strip()
+        
+        if "```json" in query_content:
+            query_content = query_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in query_content:
+            query_content = query_content.split("```")[1].split("```")[0].strip()
+        
+        search_queries = json.loads(query_content)
+        print(f"   ✅ Generated {len(search_queries)} queries:")
+        for i, q in enumerate(search_queries):
+            print(f"      {i+1}. {q}")
+    except Exception as e:
+        print(f"   ⚠️ Query generation failed, using fallback: {e}")
+        search_queries = [
+            f"{industry} customer segments market analysis",
+            f"{industry} pressure transmitter buyers end users",
+            f"{industry} instrumentation market segments",
+        ]
+    
+    # Step 2: Search and collect URLs
+    all_urls = []
+    for query in search_queries:
+        _tool_state.searched_queries.append(query)
+        print(f"   🔍 Searching: '{query[:50]}...'")
+        try:
+            response = client.search(query=query, max_results=4, search_depth="advanced")
+            for r in response.get("results", []):
+                url = r.get("url", "")
+                if url and url not in all_urls and url not in _tool_state.extracted_urls:
+                    all_urls.append(url)
+        except Exception as e:
+            print(f"   ⚠️ Search error: {e}")
+    
+    print(f"   Found {len(all_urls)} unique URLs")
+    
+    # Step 3: Extract content and store in ChromaDB
+    extracted_content = []  # [{url, content, chunk_ids}]
+    
+    for url in all_urls[:8]:  # Limit to 8 sources
+        try:
+            print(f"   📄 Extracting: {url[:50]}...")
+            extract_response = client.extract(urls=[url])
+            
+            if extract_response.get("results"):
+                raw_content = extract_response["results"][0].get("raw_content", "")
+                if raw_content and len(raw_content) > 300:
+                    # Store in ChromaDB for evidence
+                    chunk_ids = chunk_and_store(raw_content, url, f"customer segments {industry}")
+                    if chunk_ids:
+                        _tool_state.extracted_urls.append(url)
+                        _tool_state.evidence_map[url] = chunk_ids
+                        _tool_state.segments_sources.append(url)
+                        extracted_content.append({
+                            "url": url,
+                            "content": raw_content[:3000],  # Keep more for analysis
+                            "chunk_ids": chunk_ids
+                        })
+        except Exception as e:
+            print(f"   ⚠️ Extract error: {e}")
+    
+    if not extracted_content:
+        return "ERROR: Could not extract content from any sources. Try again."
+    
+    print(f"   ✅ Extracted from {len(extracted_content)} sources")
+    
+    # Step 4: LLM analyzes content to identify customer segments WITH evidence
+    analysis_prompt = f"""Analyze the following sources about the {industry} industry and identify distinct CUSTOMER SEGMENTS (groups of buyers/users of pressure transmitters).
+
+SOURCES:
+"""
+    for i, src in enumerate(extracted_content):
+        analysis_prompt += f"\n--- SOURCE {i+1}: {src['url']} ---\n{src['content'][:2000]}\n"
+    
+    analysis_prompt += f"""
+
+For each customer segment you identify, you MUST:
+1. Name the segment clearly
+2. Provide a description of who they are
+3. Quote the EXACT TEXT from the source that supports this (word for word)
+4. Identify which source URL it came from
+
+Return a JSON array:
+[
+    {{
+        "name": "Upstream Oil & Gas Operators",
+        "description": "Companies involved in exploration and production of oil and gas",
+        "evidence_text": "The exact quote from the source that mentions this segment",
+        "source_url": "https://the-url-where-you-found-this.com"
+    }},
+    ...
+]
+
+IMPORTANT:
+- Only include segments you can PROVE with direct quotes
+- evidence_text must be EXACT words from the source (copy-paste)
+- If you can't find evidence, don't include that segment
+- Focus on {industry} specifically
+
+Return ONLY valid JSON."""
+
+    print(f"   🤖 LLM analyzing for customer segments...")
+    try:
+        analysis_response = llm.invoke(analysis_prompt)
+        analysis_content = analysis_response.content.strip()
+        
+        if "```json" in analysis_content:
+            analysis_content = analysis_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in analysis_content:
+            analysis_content = analysis_content.split("```")[1].split("```")[0].strip()
+        
+        segments = json.loads(analysis_content)
+        
+        # Step 5: Store each segment with evidence_ids (be lenient - keep all segments)
+        valid_segments = []
+        for seg in segments:
+            source_url = seg.get("source_url", "")
+            evidence_text = seg.get("evidence_text", "")
+            
+            # Try to find evidence_ids for this source
+            evidence_ids = []
+            matched_url = source_url
+            
+            # 1. Exact match
+            for src in extracted_content:
+                if src["url"] == source_url:
+                    evidence_ids = src["chunk_ids"]
+                    matched_url = src["url"]
+                    break
+            
+            # 2. Partial URL match
+            if not evidence_ids:
+                for src in extracted_content:
+                    if source_url in src["url"] or src["url"] in source_url:
+                        evidence_ids = src["chunk_ids"]
+                        matched_url = src["url"]
+                        break
+            
+            # 3. Domain match (e.g., both from same website)
+            if not evidence_ids:
+                try:
+                    from urllib.parse import urlparse
+                    source_domain = urlparse(source_url).netloc
+                    for src in extracted_content:
+                        src_domain = urlparse(src["url"]).netloc
+                        if source_domain and source_domain == src_domain:
+                            evidence_ids = src["chunk_ids"]
+                            matched_url = src["url"]
+                            print(f"   📝 Domain match: {source_url[:30]} → {src['url'][:30]}")
+                            break
+                except:
+                    pass
+            
+            # 4. If still no match, use first available source's evidence (segment is still valuable)
+            if not evidence_ids and extracted_content:
+                evidence_ids = extracted_content[0]["chunk_ids"]
+                matched_url = extracted_content[0]["url"]
+                print(f"   📝 No exact source match for '{seg.get('name')}', using general evidence")
+            
+            # Always keep the segment if it has a name and description
+            seg_name = seg.get("name", "").strip()
+            seg_desc = seg.get("description", "").strip()
+            
+            if seg_name and seg_desc:
+                valid_segment = {
+                    "name": seg_name,
+                    "description": seg_desc,
+                    "evidence_text": evidence_text,
+                    "source_url": matched_url,
+                    "evidence_ids": evidence_ids,
+                    "industry": industry
+                }
+                valid_segments.append(valid_segment)
+                print(f"   ✅ Found: '{seg_name}' (from {matched_url[:40]}...)")
+            else:
+                print(f"   ⚠️ Skipped segment with missing name or description")
+        
+        _tool_state.customer_segments = valid_segments
+        
+        # Summary
+        result = f"""Found {len(valid_segments)} customer segments in {industry}:
+
+"""
+        for seg in valid_segments:
+            result += f"• **{seg['name']}**: {seg['description'][:100]}...\n"
+            result += f"  Source: {seg['source_url'][:60]}...\n\n"
+        
+        result += f"\nAll segments stored with evidence for verification in Streamlit."
+        return result
+        
+    except json.JSONDecodeError as e:
+        print(f"   ❌ JSON parse error: {e}")
+        return f"Failed to parse customer segments: {e}"
+    except Exception as e:
+        print(f"   ❌ Analysis error: {e}")
+        return f"Failed to analyze customer segments: {e}"
+
+
+@tool
+def map_segments_to_products() -> str:
+    """
+    Map customer segments to products that serve them.
+    This tool analyzes which products are relevant for each customer segment
+    and creates ADDRESSES_CUSTOMER_SEGMENT relationships in the knowledge graph.
+    
+    Call this AFTER:
+    - research_customer_segments() has identified customer segments
+    - Products have been saved with specifications
+    
+    Returns:
+        Summary of segment-to-product mappings created.
+    """
+    global _tool_state
+    
+    if not _tool_state.customer_segments:
+        return "No customer segments found. Call research_customer_segments first."
+    
+    if not _tool_state.products:
+        return "No products found. Save some products first."
+    
+    if _tool_state.segment_mappings:
+        return f"Segment mappings already created: {len(_tool_state.segment_mappings)} mappings."
+    
+    print(f"🔗 AGENT DECIDED: map_segments_to_products()")
+    
+    llm = get_llm()
+    
+    # Prepare segments data
+    segments_info = []
+    for seg in _tool_state.customer_segments:
+        segments_info.append({
+            "name": seg.get("name", ""),
+            "description": seg.get("description", ""),
+            "industry": seg.get("industry", "")
+        })
+    
+    # Prepare products data with specs
+    products_info = []
+    for product_name, product_data in _tool_state.products.items():
+        specs = _tool_state.specifications.get(product_name, {})
+        products_info.append({
+            "name": product_name,
+            "company": product_data.get("company", "Unknown"),
+            "specs": specs
+        })
+    
+    prompt = f"""Analyze which products are suitable for which customer segments.
+
+CUSTOMER SEGMENTS:
+{json.dumps(segments_info, indent=2)}
+
+AVAILABLE PRODUCTS:
+{json.dumps(products_info, indent=2)}
+
+For EACH segment, identify which products would serve them well and explain WHY.
+Consider:
+- Does the product's specifications match the segment's typical needs?
+- Is the company/brand relevant to that market?
+- Would this segment realistically purchase this product?
+- Pressure transmitters are generally applicable to most industrial segments
+
+Return a JSON array of mappings:
+[
+    {{
+        "segment": "Upstream Oil & Gas Operators",
+        "product": "3051S",
+        "reason": "High pressure rating (up to 10,000 psi) suitable for wellhead applications, ATEX certification for hazardous areas"
+    }},
+    ...
+]
+
+Rules:
+- Try to map EACH segment to at least one product if applicable
+- A product can map to multiple segments (this is normal)
+- A segment can have multiple products
+- Use EXACT segment names from the list above
+- Use EXACT product names from the list above
+- Keep reasons concise but specific (mention actual specs when possible)
+
+Return ONLY valid JSON."""
+
+    try:
+        response = llm.invoke(prompt)
+        content = response.content.strip()
+        
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        mappings = json.loads(content)
+        
+        # Validate and store mappings
+        valid_mappings = []
+        product_names = list(_tool_state.products.keys())
+        segment_names = [s.get("name", "") for s in _tool_state.customer_segments]
+        
+        for m in mappings:
+            segment = m.get("segment", "")
+            product = m.get("product", "")
+            reason = m.get("reason", "")
+            
+            # Validate segment exists
+            if segment not in segment_names:
+                # Try fuzzy match (lenient threshold)
+                from difflib import SequenceMatcher
+                best_match = None
+                best_score = 0
+                for sn in segment_names:
+                    score = SequenceMatcher(None, segment.lower(), sn.lower()).ratio()
+                    if score > best_score and score >= 0.5:  # Lenient threshold
+                        best_score = score
+                        best_match = sn
+                if best_match:
+                    print(f"   📝 Fuzzy match segment: '{segment}' → '{best_match}'")
+                    segment = best_match
+                else:
+                    print(f"   ⚠️ Skipped: Segment '{segment}' not in {segment_names}")
+                    continue
+            
+            # Validate product exists
+            if product not in product_names:
+                # Try fuzzy match (lenient threshold)
+                from difflib import SequenceMatcher
+                best_match = None
+                best_score = 0
+                for pn in product_names:
+                    score = SequenceMatcher(None, product.lower(), pn.lower()).ratio()
+                    if score > best_score and score >= 0.5:  # Lenient threshold
+                        best_score = score
+                        best_match = pn
+                if best_match:
+                    print(f"   📝 Fuzzy match product: '{product}' → '{best_match}'")
+                    product = best_match
+                else:
+                    print(f"   ⚠️ Skipped: Product '{product}' not in {product_names}")
+                    continue
+            
+            # Get evidence_ids from the segment
+            segment_data = next((s for s in _tool_state.customer_segments if s.get("name") == segment), {})
+            evidence_ids = segment_data.get("evidence_ids", [])
+            source_url = segment_data.get("source_url", "")
+            
+            valid_mapping = {
+                "segment": segment,
+                "product": product,
+                "reason": clean_string(reason)[:300],
+                "evidence_ids": evidence_ids,
+                "source_url": source_url
+            }
+            valid_mappings.append(valid_mapping)
+            print(f"   ✅ Mapped: '{segment}' → '{product}'")
+        
+        _tool_state.segment_mappings = valid_mappings
+        
+        # Generate summary
+        result = f"Created {len(valid_mappings)} segment-to-product mappings:\n\n"
+        
+        # Group by segment
+        by_segment = {}
+        for m in valid_mappings:
+            seg = m["segment"]
+            if seg not in by_segment:
+                by_segment[seg] = []
+            by_segment[seg].append(m["product"])
+        
+        for seg, products in by_segment.items():
+            result += f"• {seg}: {', '.join(products)}\n"
+        
+        return result
+        
+    except json.JSONDecodeError as e:
+        print(f"   ❌ JSON parse error: {e}")
+        return f"Failed to parse segment mappings: {e}"
+    except Exception as e:
+        print(f"   ❌ Mapping error: {e}")
+        return f"Failed to map segments to products: {e}"
+
+
 # =============================================================================
 # TOOLS LIST
 # =============================================================================
@@ -893,6 +1352,8 @@ TOOLS = [
     get_current_progress,
     research_industry_needs,
     map_needs_from_report,
+    research_customer_segments,
+    map_segments_to_products,
     finish_research,
 ]
 
@@ -905,8 +1366,9 @@ SYSTEM_PROMPT = """You are a competitive intelligence researcher for Honeywell's
 
 YOUR GOAL: 
 1. Research Honeywell's competitors and find products with specs
-2. Generate an in-depth industry needs report (from multiple sources)
-3. Map customer needs to product specifications
+2. Identify customer segments in the target industry and map products to them
+3. Generate an in-depth industry needs report (from multiple sources)
+4. Map customer needs to product specifications
 
 TOOLS AVAILABLE:
 
@@ -915,6 +1377,10 @@ Competitor/Product Research:
 - extract_page_content: MUST CALL THIS to get content AND store evidence in ChromaDB
 - save_competitor: Save a competitor (ONLY after extracting a page about them)
 - save_product: Save a product with specs (ONLY after extracting the datasheet)
+
+Market Research:
+- research_customer_segments: Find customer groups/segments in the industry (with evidence)
+- map_segments_to_products: Map which products serve which customer segments
 
 Customer Needs Research (REPORT-BASED):
 - research_industry_needs: Comprehensive research - searches 8+ sources and generates an in-depth report
@@ -933,24 +1399,22 @@ PHASE 1 - COMPETITORS & PRODUCTS:
    b. search_web for their products → extract_page_content(datasheet) → save_product with specs
 3. Get at least 1 product per competitor before moving on
 
-PHASE 2 - CUSTOMER NEEDS REPORT:
-After you have products with specs:
-1. Call research_industry_needs(industry) - this searches 8+ sources and generates a comprehensive report
-2. Call map_needs_from_report() - this extracts specific needs and maps them to your products
-That's it! The report tool handles the heavy lifting automatically.
+PHASE 2 - CUSTOMER SEGMENTS:
+After you have some products:
+1. Call research_customer_segments(industry) - this finds who buys/uses pressure transmitters
+2. Call map_segments_to_products() - this maps products to each segment
 
-The report will:
-- Search multiple times with different queries
-- Extract content from 8+ different sources
-- Generate a comprehensive report on industry challenges
-- Be stored for viewing in Streamlit
+PHASE 3 - CUSTOMER NEEDS REPORT:
+1. Call research_industry_needs(industry) - searches 8+ sources and generates a comprehensive report
+2. Call map_needs_from_report() - extracts specific needs and maps them to your products
 
 FINISH when you have:
 - At least 3 competitors with products
+- Customer segments identified AND mapped to products
 - A generated industry needs report
-- Need-to-product mappings from the report
+- Need-to-product mappings
 
-START with Phase 1 (competitors), then Phase 2 (needs report)!"""
+START with Phase 1, then Phase 2, then Phase 3!"""
 
 
 # =============================================================================
@@ -1134,6 +1598,24 @@ Start now.""")
         "supply_voltage": "10.5-42.4 VDC"
     }
     
+    # AUTO-COMPLETE: If no customer segments, research them
+    if _tool_state.products and not _tool_state.customer_segments:
+        print("\n⚠️  No customer segments. Running research automatically...")
+        try:
+            result = research_customer_segments.invoke({"industry": industry})
+            print(f"   {result[:200]}...")
+        except Exception as e:
+            print(f"   ❌ Could not auto-research customer segments: {e}")
+    
+    # AUTO-COMPLETE: If segments exist but no mappings, create them
+    if _tool_state.customer_segments and not _tool_state.segment_mappings:
+        print("\n⚠️  Customer segments exist but no product mappings. Running automatically...")
+        try:
+            result = map_segments_to_products.invoke({})
+            print(f"   {result[:200]}...")
+        except Exception as e:
+            print(f"   ❌ Could not auto-map segments to products: {e}")
+    
     # AUTO-COMPLETE: If iterations ran out before customer needs phase, run it now
     if _tool_state.products and not _tool_state.industry_needs_report:
         print("\n⚠️  Iterations ended before customer needs research. Running automatically...")
@@ -1162,6 +1644,7 @@ Start now.""")
     print(f"   Competitors: {len(_tool_state.competitors)}")
     print(f"   Products: {len(_tool_state.products)}")
     print(f"   Specs: {sum(len(s) for s in _tool_state.specifications.values())}")
+    print(f"   Customer segments: {len(_tool_state.customer_segments)} ({len(_tool_state.segment_mappings)} mappings)")
     print(f"   Customer needs: {len(_tool_state.customer_needs)}")
     print(f"   Need mappings: {len(_tool_state.need_mappings)}")
     print(f"   Searches made: {len(_tool_state.searched_queries)}")
@@ -1178,6 +1661,9 @@ Start now.""")
         "evidence_map": _tool_state.evidence_map,
         "industry_needs_report": _tool_state.industry_needs_report,
         "report_sources": _tool_state.report_sources,
+        "customer_segments": _tool_state.customer_segments,
+        "segments_sources": _tool_state.segments_sources,
+        "segment_mappings": _tool_state.segment_mappings,
     }
 
 

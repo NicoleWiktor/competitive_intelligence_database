@@ -242,6 +242,62 @@ def write_to_neo4j(data: Dict[str, Any]):
             print(f"[neo4j] Created {len(created_needs)} customer needs (one per product)")
             print(f"[neo4j] Created {mapping_count} ADDRESSES_NEED relationships")
             
+            # Create CustomerSegment nodes and ADDRESSES_CUSTOMER_SEGMENT relationships
+            # Each product gets its OWN CustomerSegment node (unique key: product|segment)
+            segments = data.get("customer_segments", [])
+            segment_mappings = data.get("segment_mappings", [])
+            
+            # Build a lookup for segment details
+            segment_details = {seg.get("name", ""): seg for seg in segments}
+            
+            if segment_mappings:
+                print(f"\n[neo4j] Creating CustomerSegment nodes (one per product mapping)...")
+                created_segments = set()
+                seg_mapping_count = 0
+                
+                for m in segment_mappings:
+                    segment_name = m.get("segment", "")[:100].replace("'", "").replace('"', '')
+                    product = m.get("product", "")[:100].replace("'", "").replace('"', '')
+                    reason = m.get("reason", "")[:300].replace("'", "").replace('"', '')
+                    mapping_source_url = m.get("source_url", "")[:200].replace("'", "")
+                    mapping_evidence_ids = json.dumps(m.get("evidence_ids", [])[:10])
+                    
+                    # Get segment details from original segment data
+                    seg_data = segment_details.get(segment_name, {})
+                    seg_desc = seg_data.get("description", "")[:200].replace("'", "").replace('"', '')
+                    seg_industry = seg_data.get("industry", "")[:50].replace("'", "")
+                    seg_source_url = seg_data.get("source_url", "")[:200].replace("'", "")
+                    seg_evidence_text = seg_data.get("evidence_text", "")[:500].replace("'", "").replace('"', '')
+                    seg_evidence_ids = json.dumps(seg_data.get("evidence_ids", [])[:10])
+                    
+                    # Create UNIQUE CustomerSegment node for this product (key = product|segment)
+                    segment_key = f"{product}|{segment_name}"
+                    
+                    session.run(f"""
+                        MERGE (s:CustomerSegment {{key: '{segment_key}'}})
+                        SET s.name = '{segment_name}',
+                            s.description = '{seg_desc}',
+                            s.industry = '{seg_industry}',
+                            s.source_url = '{seg_source_url}',
+                            s.evidence_text = '{seg_evidence_text}',
+                            s.evidence_ids = {seg_evidence_ids}
+                    """)
+                    created_segments.add(segment_key)
+                    
+                    # Create ADDRESSES_CUSTOMER_SEGMENT relationship
+                    session.run(f"""
+                        MATCH (p:Product {{name: '{product}'}})
+                        MATCH (s:CustomerSegment {{key: '{segment_key}'}})
+                        MERGE (p)-[r:ADDRESSES_CUSTOMER_SEGMENT]->(s)
+                        SET r.reason = '{reason}',
+                            r.source_url = '{mapping_source_url}',
+                            r.evidence_ids = {mapping_evidence_ids}
+                    """)
+                    seg_mapping_count += 1
+                
+                print(f"[neo4j] Created {len(created_segments)} CustomerSegment nodes (one per product)")
+                print(f"[neo4j] Created {seg_mapping_count} ADDRESSES_CUSTOMER_SEGMENT relationships")
+            
             # Verify final counts
             counts = count_nodes()
             print(f"\n[neo4j] FINAL COUNTS:")
@@ -305,6 +361,20 @@ def run_pipeline(
         with open(report_path, "w") as f:
             json.dump(report_data, f, indent=2)
         print(f"📄 Report saved to industry_report.json")
+    
+    # Save customer segments to file for Streamlit
+    if data.get("customer_segments"):
+        import os
+        segments_data = {
+            "segments": data.get("customer_segments", []),
+            "sources": data.get("segments_sources", []),
+            "segment_mappings": data.get("segment_mappings", []),
+            "industry": industry
+        }
+        segments_path = os.path.join(os.path.dirname(__file__), "..", "..", "customer_segments.json")
+        with open(segments_path, "w") as f:
+            json.dump(segments_data, f, indent=2)
+        print(f"👥 Customer segments saved to customer_segments.json ({len(data.get('segment_mappings', []))} product mappings)")
     
     print("\n" + "="*60)
     print("✅ PIPELINE COMPLETE")

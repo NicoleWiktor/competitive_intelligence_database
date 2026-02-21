@@ -210,33 +210,47 @@ def fetch_graph_data():
         for record in result:
             source_id = record['source_id']
             if source_id not in nodes:
-                source_name = record['source_name']
+                source_name = record['source_name'] or ""
                 source_group = record['source_label']
-                # For specs/prices/reviews, strip the product prefix before the pipe for a cleaner label
-                if source_group in ["Specification", "Price", "Review"] and "|" in source_name:
-                    clean_source_label = source_name.split("|", 1)[1].strip()
+                # For nodes with product|name format, show item name with short product prefix
+                # This makes each node VISUALLY distinct even if they have the same segment/need name
+                labels_with_pipe = ["Specification", "Price", "Review", "CustomerSegment", "CustomerNeed"]
+                if source_group in labels_with_pipe and "|" in source_name:
+                    parts = source_name.split("|", 1)
+                    product_short = parts[0].strip()[:8]  # Short product name (e.g., "3051S")
+                    item_name = parts[1].strip()[:18]  # Item name
+                    # Show as "Segment (Product)" to make visually distinct
+                    clean_source_label = f"{item_name}\n({product_short})"
+                    hover_title = f"Product: {parts[0]}\n{source_group}: {parts[1]}"
                 else:
-                    clean_source_label = source_name
+                    clean_source_label = source_name[:30]
+                    hover_title = source_name
                 nodes[source_id] = {
                     'id': source_id,
-                    'label': clean_source_label[:30],
-                    'title': clean_source_label,
+                    'label': clean_source_label,
+                    'title': hover_title,
                     'group': source_group,
                     'full_name': source_name
                 }
             
             target_id = record['target_id']
             if target_id not in nodes:
-                target_name = record['target_name']
+                target_name = record['target_name'] or ""
                 target_group = record['target_label']
-                if target_group in ["Specification", "Price", "Review"] and "|" in target_name:
-                    clean_target_label = target_name.split("|", 1)[1].strip()
+                labels_with_pipe = ["Specification", "Price", "Review", "CustomerSegment", "CustomerNeed"]
+                if target_group in labels_with_pipe and "|" in target_name:
+                    parts = target_name.split("|", 1)
+                    product_short = parts[0].strip()[:8]
+                    item_name = parts[1].strip()[:18]
+                    clean_target_label = f"{item_name}\n({product_short})"
+                    hover_title = f"Product: {parts[0]}\n{target_group}: {parts[1]}"
                 else:
-                    clean_target_label = target_name
+                    clean_target_label = target_name[:30]
+                    hover_title = target_name
                 nodes[target_id] = {
                     'id': target_id,
-                    'label': clean_target_label[:30],
-                    'title': clean_target_label,
+                    'label': clean_target_label,
+                    'title': hover_title,
                     'group': target_group,
                     'full_name': target_name
                 }
@@ -522,7 +536,8 @@ def main():
         "📋 Specification Table", 
         "🔍 Compare Products",
         "✅ Verify Data",
-        "🎯 Customer Needs"
+        "🎯 Customer Needs",
+        "👥 Customer Segments"
     ])
     
     # === TAB 1: KNOWLEDGE GRAPH ===
@@ -1560,6 +1575,181 @@ K → °C: K - 273.15
             
         except Exception as e:
             st.warning(f"⚠️ Could not load customer needs: {str(e)}")
+
+    # === TAB 8: CUSTOMER SEGMENTS ===
+    with tabs[7]:
+        st.markdown("""
+        <div class="section-header">
+            <h2>👥 Customer Segments</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        Customer segments are distinct groups of buyers/users in the industry. 
+        Each segment has been identified from web sources and includes **evidence** - the exact text 
+        that proves this segment exists, and the source URL where it was found.
+        """)
+        
+        # Load segments from file
+        segments_path = Path(__file__).parent / "customer_segments.json"
+        
+        if segments_path.exists():
+            with open(segments_path, "r") as f:
+                segments_data = json.load(f)
+            
+            segments = segments_data.get("segments", [])
+            sources = segments_data.get("sources", [])
+            segment_mappings = segments_data.get("segment_mappings", [])
+            industry = segments_data.get("industry", "Unknown")
+            
+            # Build mapping lookup: segment -> [products]
+            segment_products = {}
+            for m in segment_mappings:
+                seg = m.get("segment", "")
+                prod = m.get("product", "")
+                reason = m.get("reason", "")
+                if seg not in segment_products:
+                    segment_products[seg] = []
+                segment_products[seg].append({"product": prod, "reason": reason})
+            
+            # Metrics row
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value">{len(segments)}</div>
+                    <div class="metric-label">Segments Found</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value">{len(segment_mappings)}</div>
+                    <div class="metric-label">Product Mappings</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value">{len(sources)}</div>
+                    <div class="metric-label">Sources Analyzed</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col4:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value">{industry.title()}</div>
+                    <div class="metric-label">Industry</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            if segments:
+                st.markdown("### 📋 Identified Customer Segments")
+                
+                for i, segment in enumerate(segments):
+                    seg_name = segment.get('name', 'Unknown')
+                    products_for_seg = segment_products.get(seg_name, [])
+                    product_count = len(products_for_seg)
+                    
+                    with st.expander(f"**{i+1}. {seg_name}** ({product_count} products)", expanded=(i==0)):
+                        # Description
+                        st.markdown(f"**Description:** {segment.get('description', 'No description')}")
+                        
+                        # Products mapped to this segment
+                        if products_for_seg:
+                            st.markdown("---")
+                            st.markdown("**🎯 Products for this Segment:**")
+                            for pm in products_for_seg:
+                                st.markdown(f"- **{pm['product']}**: {pm['reason'][:150]}...")
+                        
+                        st.markdown("---")
+                        
+                        # Evidence section
+                        st.markdown("**📄 Evidence (Exact Source Text):**")
+                        evidence_text = segment.get("evidence_text", "")
+                        if evidence_text:
+                            st.info(f'"{evidence_text}"')
+                        else:
+                            st.warning("No evidence text stored")
+                        
+                        # Source URL
+                        source_url = segment.get("source_url", "")
+                        if source_url:
+                            st.markdown(f"**🔗 Source:** [{source_url[:60]}...]({source_url})")
+                        
+                        # Evidence IDs (for debugging/verification)
+                        evidence_ids = segment.get("evidence_ids", [])
+                        if evidence_ids:
+                            st.markdown(f"**🗄️ ChromaDB Evidence IDs:** `{len(evidence_ids)} chunks stored`")
+                            
+                            # Option to view raw evidence from ChromaDB
+                            if st.button(f"View ChromaDB Evidence", key=f"seg_evidence_{i}"):
+                                try:
+                                    chunk = get_chunk_by_id(evidence_ids[0])
+                                    if chunk:
+                                        st.code(chunk.get("document", "")[:500] + "...", language=None)
+                                except Exception as e:
+                                    st.error(f"Could not retrieve evidence: {e}")
+                
+                # Segment-to-Product Mappings Table
+                if segment_mappings:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown("### 🔗 Segment → Product Mappings (Knowledge Graph)")
+                    st.markdown("*These relationships are stored as `ADDRESSES_CUSTOMER_SEGMENT` in Neo4j*")
+                    
+                    mapping_table = []
+                    for m in segment_mappings:
+                        mapping_table.append({
+                            "Segment": m.get("segment", ""),
+                            "Product": m.get("product", ""),
+                            "Reason": m.get("reason", "")[:100] + "..."
+                        })
+                    
+                    mapping_df = pd.DataFrame(mapping_table)
+                    st.dataframe(mapping_df, use_container_width=True)
+                
+                # Summary table
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("### 📊 Segments Summary Table")
+                
+                table_data = []
+                for seg in segments:
+                    seg_name = seg.get("name", "")
+                    products = segment_products.get(seg_name, [])
+                    table_data.append({
+                        "Segment": seg_name,
+                        "Description": (seg.get("description", ""))[:60] + "...",
+                        "Products": len(products),
+                        "Has Evidence": "✅" if seg.get("evidence_text") else "❌"
+                    })
+                
+                df = pd.DataFrame(table_data)
+                st.dataframe(df, use_container_width=True)
+                
+                # Sources list
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("### 🔗 All Sources Analyzed")
+                for src in sources:
+                    st.markdown(f"- [{src[:70]}...]({src})")
+            else:
+                st.info("No customer segments found in the data.")
+        else:
+            st.info("""
+            **No customer segments data yet.**
+            
+            Run the pipeline to identify customer segments:
+            ```bash
+            python main.py --iterations 30 --industry "oil and gas"
+            ```
+            
+            The agent will:
+            1. Generate search queries specific to your industry
+            2. Search the web and extract content
+            3. Identify distinct customer segments with evidence
+            4. Map products to each segment
+            """)
 
 
 if __name__ == "__main__":

@@ -46,6 +46,7 @@ def main():
     print(f"   Competitors: {len(result.get('competitors', {}))}")
     print(f"   Products: {len(result.get('products', {}))}")
     print(f"   Specs: {sum(len(s) for s in result.get('specifications', {}).values())}")
+    print(f"   Customer Segments: {len(result.get('customer_segments', []))} ({len(result.get('segment_mappings', []))} product mappings)")
     has_report = "✅" if result.get('industry_needs_report') else "❌"
     print(f"   Industry Report: {has_report} ({len(result.get('report_sources', []))} sources)")
     print(f"   Customer Needs: {len(result.get('customer_needs', {}))}")
