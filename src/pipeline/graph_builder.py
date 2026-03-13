@@ -376,6 +376,15 @@ def run_pipeline(
             json.dump(segments_data, f, indent=2)
         print(f"👥 Customer segments saved to customer_segments.json ({len(data.get('segment_mappings', []))} product mappings)")
     
+    # Save House of Quality to file for Streamlit
+    if data.get("house_of_quality"):
+        import os
+        hoq_path = os.path.join(os.path.dirname(__file__), "..", "..", "house_of_quality.json")
+        with open(hoq_path, "w") as f:
+            json.dump(data.get("house_of_quality"), f, indent=2)
+        hoq = data.get("house_of_quality", {})
+        print(f"🏠 House of Quality saved ({len(hoq.get('whats', []))} needs × {len(hoq.get('hows', []))} specs)")
+    
     print("\n" + "="*60)
     print("✅ PIPELINE COMPLETE")
     print("="*60)

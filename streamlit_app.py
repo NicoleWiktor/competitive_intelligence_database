@@ -537,7 +537,8 @@ def main():
         "🔍 Compare Products",
         "✅ Verify Data",
         "🎯 Customer Needs",
-        "👥 Customer Segments"
+        "👥 Customer Segments",
+        "🏠 House of Quality"
     ])
     
     # === TAB 1: KNOWLEDGE GRAPH ===
@@ -1749,6 +1750,215 @@ K → °C: K - 273.15
             2. Search the web and extract content
             3. Identify distinct customer segments with evidence
             4. Map products to each segment
+            """)
+    
+    # === TAB 9: HOUSE OF QUALITY ===
+    with tabs[8]:
+        st.markdown("## 🏠 House of Quality (QFD Matrix)")
+        st.markdown("*Quality Function Deployment - Mapping customer needs to product specifications*")
+        
+        # Load House of Quality data
+        import os
+        hoq_path = os.path.join(os.path.dirname(__file__), "house_of_quality.json")
+        hoq_data = None
+        
+        if os.path.exists(hoq_path):
+            try:
+                with open(hoq_path, "r") as f:
+                    hoq_data = json.load(f)
+            except Exception as e:
+                st.error(f"Error loading House of Quality data: {e}")
+        
+        if hoq_data:
+            whats = hoq_data.get("whats", [])
+            hows = hoq_data.get("hows", [])
+            matrix = hoq_data.get("matrix", [])
+            competitive_scores = hoq_data.get("competitive_scores", [])
+            correlations = hoq_data.get("technical_correlations", [])
+            insights = hoq_data.get("key_insights", [])
+            products = hoq_data.get("products", {})
+            generated_at = hoq_data.get("generated_at", "Unknown")
+            
+            # Metrics row
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Customer Needs (WHATs)", len(whats))
+            with col2:
+                st.metric("Specifications (HOWs)", len(hows))
+            with col3:
+                st.metric("Products Analyzed", len(products))
+            with col4:
+                total_relationships = sum(len(m.get("relationships", {})) for m in matrix)
+                st.metric("Relationships", total_relationships)
+            
+            st.markdown("---")
+            
+            # Key Insights
+            if insights:
+                st.markdown("### 💡 Key Strategic Insights")
+                for i, insight in enumerate(insights, 1):
+                    st.info(f"**{i}.** {insight}")
+            
+            st.markdown("---")
+            
+            # Relationship Matrix
+            st.markdown("### 📊 Relationship Matrix (WHATs × HOWs)")
+            st.markdown("""
+            **Relationship Weights:**
+            - 🟢 **9** = Strong (spec directly fulfills need)
+            - 🟡 **3** = Medium (spec partially addresses need)
+            - ⚪ **1** = Weak (minor impact)
+            - ⬜ **0** = No relationship
+            """)
+            
+            if matrix and hows:
+                # Build matrix dataframe
+                matrix_data = []
+                for m in matrix:
+                    row = {"Customer Need": m.get("need_name", m.get("need_id", ""))}
+                    relationships = m.get("relationships", {})
+                    for spec in hows:
+                        weight = relationships.get(spec, 0)
+                        if weight == 9:
+                            row[spec] = "🟢 9"
+                        elif weight == 3:
+                            row[spec] = "🟡 3"
+                        elif weight == 1:
+                            row[spec] = "⚪ 1"
+                        else:
+                            row[spec] = ""
+                    matrix_data.append(row)
+                
+                matrix_df = pd.DataFrame(matrix_data)
+                st.dataframe(matrix_df, use_container_width=True, height=400)
+                
+                # Show reasoning for each need
+                with st.expander("📝 View Reasoning for Relationships"):
+                    for m in matrix:
+                        need_name = m.get("need_name", m.get("need_id", "Unknown"))
+                        reasoning = m.get("reasoning", "No reasoning provided")
+                        st.markdown(f"**{need_name}:**")
+                        st.markdown(f"> {reasoning}")
+                        st.markdown("---")
+            
+            st.markdown("---")
+            
+            # Competitive Analysis
+            if competitive_scores:
+                st.markdown("### 🏆 Competitive Analysis")
+                st.markdown("*How well each product meets customer needs (Score 1-5)*")
+                
+                # Build competitive scores table - handle both old dict format and new list format
+                comp_data = []
+                all_score_reasons = {}  # {product: {need_id: reason}}
+                
+                for prod in competitive_scores:
+                    product_name = prod.get("product", "Unknown")
+                    scores_data = prod.get("scores", {})
+                    
+                    row = {"Product": product_name}
+                    all_score_reasons[product_name] = {}
+                    
+                    # Handle new list format with reasons
+                    if isinstance(scores_data, list):
+                        scores_dict = {}
+                        for s in scores_data:
+                            need_id = s.get("need_id", "")
+                            score = s.get("score", 0)
+                            reason = s.get("reason", "")
+                            scores_dict[need_id] = score
+                            all_score_reasons[product_name][need_id] = reason
+                        scores_data = scores_dict
+                    
+                    for need in whats:
+                        need_id = need.get("id", "")
+                        score = scores_data.get(need_id, "-")
+                        if isinstance(score, (int, float)):
+                            if score >= 4:
+                                row[need.get("name", need_id)[:20]] = f"🟢 {score}"
+                            elif score >= 3:
+                                row[need.get("name", need_id)[:20]] = f"🟡 {score}"
+                            else:
+                                row[need.get("name", need_id)[:20]] = f"🔴 {score}"
+                        else:
+                            row[need.get("name", need_id)[:20]] = str(score)
+                    comp_data.append(row)
+                
+                comp_df = pd.DataFrame(comp_data)
+                st.dataframe(comp_df, use_container_width=True)
+                
+                # Product assessments with detailed score reasons
+                with st.expander("📋 Product Assessments & Score Reasoning"):
+                    for prod in competitive_scores:
+                        product_name = prod.get("product", "Unknown")
+                        assessment = prod.get("overall_assessment", "No assessment")
+                        
+                        st.markdown(f"### {product_name}")
+                        st.markdown(f"**Overall:** {assessment}")
+                        
+                        # Show individual score reasons
+                        product_reasons = all_score_reasons.get(product_name, {})
+                        if product_reasons:
+                            st.markdown("**Score Breakdown:**")
+                            for need in whats:
+                                need_id = need.get("id", "")
+                                need_name = need.get("name", need_id)
+                                reason = product_reasons.get(need_id, "")
+                                if reason:
+                                    st.markdown(f"- **{need_name}:** {reason}")
+                        st.markdown("---")
+            
+            st.markdown("---")
+            
+            # Technical Correlations (Roof of the House)
+            if correlations:
+                st.markdown("### 🔺 Technical Correlations (Roof)")
+                st.markdown("*How specifications interact with each other*")
+                
+                corr_data = []
+                for c in correlations:
+                    corr_type = c.get("correlation", "none")
+                    symbol = "↑↑" if corr_type == "positive" else ("↓↓" if corr_type == "negative" else "—")
+                    corr_data.append({
+                        "Spec 1": c.get("spec1", ""),
+                        "Correlation": f"{symbol} ({corr_type})",
+                        "Spec 2": c.get("spec2", ""),
+                        "Explanation": c.get("explanation", "")
+                    })
+                
+                corr_df = pd.DataFrame(corr_data)
+                st.dataframe(corr_df, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Raw data expander
+            with st.expander("🔍 View Raw Data"):
+                st.markdown("#### Customer Needs (WHATs)")
+                st.json(whats)
+                
+                st.markdown("#### Specifications (HOWs)")
+                st.json(hows)
+                
+                st.markdown("#### Products & Specs")
+                st.json(products)
+            
+            st.caption(f"Generated: {generated_at}")
+            
+        else:
+            st.info("""
+            **No House of Quality data yet.**
+            
+            Run the pipeline to generate a QFD matrix:
+            ```bash
+            python main.py --iterations 30 --industry "oil and gas"
+            ```
+            
+            The House of Quality tool will:
+            1. Map customer needs (WHATs) to specifications (HOWs)
+            2. Assign relationship weights (0, 1, 3, 9)
+            3. Score each product against customer needs
+            4. Identify technical correlations
+            5. Generate strategic insights
             """)
 
 

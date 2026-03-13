@@ -22,6 +22,7 @@ The system uses a LangGraph StateGraph with two nodes (`agent` and `tools`) in a
 | `map_segments_to_products` | Maps which products serve which customer segments |
 | `research_industry_needs` | Searches 8+ sources, generates comprehensive needs report |
 | `map_needs_from_report` | Extracts needs from report and maps to products |
+| `generate_house_of_quality` | Creates QFD matrix mapping customer needs to specs |
 | `get_current_progress` | Returns current research status |
 | `finish_research` | Signals completion |
 
@@ -40,10 +41,11 @@ The system uses a LangGraph StateGraph with two nodes (`agent` and `tools`) in a
 3. If LLM returns no tool calls (or calls `finish_research`) → end
 4. Final data written to Neo4j
 
-**Research Strategy (Three Phases):**
+**Research Strategy (Four Phases):**
 - **Phase 1**: Find competitors and their products with specs
 - **Phase 2**: Research customer segments (who buys pressure transmitters) and map products to segments
 - **Phase 3**: Generate comprehensive industry needs report (from 8+ sources), then map needs to product specs
+- **Phase 4**: Build House of Quality (QFD) matrix mapping customer needs to specifications
 
 **Graph Structure:**
 ```
@@ -126,5 +128,6 @@ Evidence verification is done through the Streamlit dashboard's **"✅ Verify Da
 | ✅ Verify Data | Human verification with ChromaDB evidence |
 | 🎯 Customer Needs | Industry needs report and product mappings |
 | 👥 Customer Segments | Customer groups with evidence and product mappings |
+| 🏠 House of Quality | QFD matrix with relationship weights and competitive scores |
 
 

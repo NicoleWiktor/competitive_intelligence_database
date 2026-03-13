@@ -1,209 +1,535 @@
 {
-  "customer_requirements": [
+  "whats": [
     {
+      "id": "Accuracy \u00b10.075% for custody transfer",
       "name": "Accuracy \u00b10.075% for custody transfer",
-      "importance": 5,
-      "spec_type": "accuracy"
+      "threshold": "\u00b10.075%",
+      "spec_type": "accuracy",
+      "description": ""
     },
     {
+      "id": "Pressure range 0-15000 psi for wellhead applications",
       "name": "Pressure range 0-15000 psi for wellhead applications",
-      "importance": 4,
-      "spec_type": "pressure_range"
+      "threshold": "0-15000 psi",
+      "spec_type": "pressure_range",
+      "description": ""
     },
     {
+      "id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
       "name": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
-      "importance": 4,
-      "spec_type": "temperature_range"
+      "threshold": "-40\u00b0C to 85\u00b0C",
+      "spec_type": "temperature_range",
+      "description": ""
     },
     {
-      "name": "Robust construction for corrosive fluids",
-      "importance": 3,
-      "spec_type": "material_selection"
-    },
-    {
+      "id": "Certification ATEX Zone 1 for hazardous areas",
       "name": "Certification ATEX Zone 1 for hazardous areas",
-      "importance": 4,
-      "spec_type": "certification"
+      "threshold": "ATEX Zone 1",
+      "spec_type": "certification",
+      "description": ""
     },
     {
-      "name": "Output signal 4-20 mA or digital protocols for process control",
-      "importance": 4,
-      "spec_type": "output_signal"
+      "id": "Vibration-resistant housing for mechanical vibration",
+      "name": "Vibration-resistant housing for mechanical vibration",
+      "threshold": "Vibration-resistant housing",
+      "spec_type": "mechanical_design",
+      "description": ""
     },
     {
-      "name": "Easy installation and maintenance for minimal downtime",
-      "importance": 3,
-      "spec_type": "installation_guidelines"
+      "id": "Stable output under electrical noise for signal interference",
+      "name": "Stable output under electrical noise for signal interference",
+      "threshold": "Stable output under electrical noise",
+      "spec_type": "output_signal",
+      "description": ""
     },
     {
-      "name": "Overpressure rating 2x maximum operating pressure for safety",
-      "importance": 4,
-      "spec_type": "overpressure_rating"
+      "id": "Availability of troubleshooting guides for maintenance support",
+      "name": "Availability of troubleshooting guides for maintenance support",
+      "threshold": "Availability of troubleshooting guides",
+      "spec_type": "service_and_support",
+      "description": ""
+    },
+    {
+      "id": "Compatibility with monitoring software for data logging",
+      "name": "Compatibility with monitoring software for data logging",
+      "threshold": "Compatibility with monitoring software",
+      "spec_type": "software_integration",
+      "description": ""
     }
   ],
-  "technical_specifications": [
-    "accuracy",
+  "hows": [
     "pressure_range",
-    "temperature_range",
-    "material_selection",
-    "certification",
+    "accuracy",
     "output_signal",
-    "installation_guidelines",
-    "overpressure_rating"
+    "temperature_range",
+    "supply_voltage",
+    "process_connection"
   ],
-  "relationship_matrix": {
-    "Accuracy \u00b10.075% for custody transfer": {
-      "accuracy": 9,
-      "pressure_range": 0,
-      "temperature_range": 0,
-      "material_selection": 0,
-      "certification": 0,
-      "output_signal": 0,
-      "installation_guidelines": 0,
-      "overpressure_rating": 0
+  "matrix": [
+    {
+      "need_id": "Accuracy \u00b10.075% for custody transfer",
+      "need_name": "Accuracy \u00b10.075% for custody transfer",
+      "relationships": {
+        "accuracy": 9
+      },
+      "reasoning": "Accuracy is directly related to the customer's need for precise measurements in custody transfer."
     },
-    "Pressure range 0-15000 psi for wellhead applications": {
-      "accuracy": 0,
-      "pressure_range": 9,
-      "temperature_range": 0,
-      "material_selection": 0,
-      "certification": 0,
-      "output_signal": 0,
-      "installation_guidelines": 0,
-      "overpressure_rating": 3
+    {
+      "need_id": "Pressure range 0-15000 psi for wellhead applications",
+      "need_name": "Pressure range 0-15000 psi for wellhead applications",
+      "relationships": {
+        "pressure_range": 9
+      },
+      "reasoning": "Pressure range is critical for wellhead applications, directly fulfilling the customer's requirement."
     },
-    "Temperature -40\u00b0C to 85\u00b0C for harsh environments": {
-      "accuracy": 0,
-      "pressure_range": 0,
-      "temperature_range": 9,
-      "material_selection": 0,
-      "certification": 0,
-      "output_signal": 0,
-      "installation_guidelines": 0,
-      "overpressure_rating": 0
+    {
+      "need_id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+      "need_name": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+      "relationships": {
+        "temperature_range": 9
+      },
+      "reasoning": "Temperature range is essential for operation in harsh environments, directly addressing the customer's need."
     },
-    "Robust construction for corrosive fluids": {
-      "accuracy": 0,
-      "pressure_range": 0,
-      "temperature_range": 0,
-      "material_selection": 9,
-      "certification": 0,
-      "output_signal": 0,
-      "installation_guidelines": 0,
-      "overpressure_rating": 0
+    {
+      "need_id": "Certification ATEX Zone 1 for hazardous areas",
+      "need_name": "Certification ATEX Zone 1 for hazardous areas",
+      "relationships": {
+        "certification": 9
+      },
+      "reasoning": "Certification is crucial for safety in hazardous areas, directly fulfilling the customer's requirement."
     },
-    "Certification ATEX Zone 1 for hazardous areas": {
-      "accuracy": 0,
-      "pressure_range": 0,
-      "temperature_range": 0,
-      "material_selection": 0,
-      "certification": 9,
-      "output_signal": 0,
-      "installation_guidelines": 0,
-      "overpressure_rating": 0
+    {
+      "need_id": "Vibration-resistant housing for mechanical vibration",
+      "need_name": "Vibration-resistant housing for mechanical vibration",
+      "relationships": {
+        "mechanical_design": 9
+      },
+      "reasoning": "Mechanical design is directly related to the need for vibration resistance."
     },
-    "Output signal 4-20 mA or digital protocols for process control": {
-      "accuracy": 0,
-      "pressure_range": 0,
-      "temperature_range": 0,
-      "material_selection": 0,
-      "certification": 0,
-      "output_signal": 9,
-      "installation_guidelines": 0,
-      "overpressure_rating": 0
+    {
+      "need_id": "Stable output under electrical noise for signal interference",
+      "need_name": "Stable output under electrical noise for signal interference",
+      "relationships": {
+        "output_signal": 9
+      },
+      "reasoning": "Output signal stability is critical for reliable performance in environments with electrical noise."
     },
-    "Easy installation and maintenance for minimal downtime": {
-      "accuracy": 0,
-      "pressure_range": 0,
-      "temperature_range": 0,
-      "material_selection": 0,
-      "certification": 0,
-      "output_signal": 0,
-      "installation_guidelines": 9,
-      "overpressure_rating": 0
+    {
+      "need_id": "Availability of troubleshooting guides for maintenance support",
+      "need_name": "Availability of troubleshooting guides for maintenance support",
+      "relationships": {
+        "service_and_support": 9
+      },
+      "reasoning": "Service and support are essential for maintenance, directly addressing the customer's need."
     },
-    "Overpressure rating 2x maximum operating pressure for safety": {
-      "accuracy": 0,
-      "pressure_range": 3,
-      "temperature_range": 0,
-      "material_selection": 0,
-      "certification": 0,
-      "output_signal": 0,
-      "installation_guidelines": 0,
-      "overpressure_rating": 9
+    {
+      "need_id": "Compatibility with monitoring software for data logging",
+      "need_name": "Compatibility with monitoring software for data logging",
+      "relationships": {
+        "software_integration": 9
+      },
+      "reasoning": "Software integration is crucial for data logging, directly fulfilling the customer's requirement."
     }
-  },
-  "competitive_assessment": {
+  ],
+  "competitive_scores": [
+    {
+      "product": "Rosemount 2051",
+      "scores": [
+        {
+          "need_id": "Accuracy \u00b10.075% for custody transfer",
+          "score": 4,
+          "reason": "Score = 4 because accuracy = \u00b10.05% meets required \u00b10.075% (meets)"
+        },
+        {
+          "need_id": "Pressure range 0-15000 psi for wellhead applications",
+          "score": 2,
+          "reason": "Score = 2 because pressure_range = 4000 psi < required 15000 psi (falls short)"
+        },
+        {
+          "need_id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+          "score": 4,
+          "reason": "Score = 4 because temperature_range = -40 to 100\u00b0C exceeds required -40 to 85\u00b0C (exceeds)"
+        },
+        {
+          "need_id": "Certification ATEX Zone 1 for hazardous areas",
+          "score": 1,
+          "reason": "Score = 1 because certification is not specified (missing)"
+        },
+        {
+          "need_id": "Vibration-resistant housing for mechanical vibration",
+          "score": 1,
+          "reason": "Score = 1 because mechanical design is not specified (missing)"
+        },
+        {
+          "need_id": "Stable output under electrical noise for signal interference",
+          "score": 4,
+          "reason": "Score = 4 because output_signal = 4-20 mA HART meets required stable output (meets)"
+        },
+        {
+          "need_id": "Availability of troubleshooting guides for maintenance support",
+          "score": 1,
+          "reason": "Score = 1 because service_and_support is not specified (missing)"
+        },
+        {
+          "need_id": "Compatibility with monitoring software for data logging",
+          "score": 1,
+          "reason": "Score = 1 because software_integration is not specified (missing)"
+        }
+      ],
+      "overall_assessment": "The Rosemount 2051 meets some key specifications but falls short in pressure range and lacks critical certifications."
+    },
+    {
+      "product": "EJX510A",
+      "scores": [
+        {
+          "need_id": "Accuracy \u00b10.075% for custody transfer",
+          "score": 4,
+          "reason": "Score = 4 because accuracy = \u00b10.04% meets required \u00b10.075% (meets)"
+        },
+        {
+          "need_id": "Pressure range 0-15000 psi for wellhead applications",
+          "score": 2,
+          "reason": "Score = 2 because pressure_range = 7200 psi < required 15000 psi (falls short)"
+        },
+        {
+          "need_id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+          "score": 4,
+          "reason": "Score = 4 because temperature_range = -40 to 85\u00b0C meets required -40 to 85\u00b0C (meets)"
+        },
+        {
+          "need_id": "Certification ATEX Zone 1 for hazardous areas",
+          "score": 1,
+          "reason": "Score = 1 because certification is not specified (missing)"
+        },
+        {
+          "need_id": "Vibration-resistant housing for mechanical vibration",
+          "score": 1,
+          "reason": "Score = 1 because mechanical design is not specified (missing)"
+        },
+        {
+          "need_id": "Stable output under electrical noise for signal interference",
+          "score": 4,
+          "reason": "Score = 4 because output_signal = 4-20 mA HART meets required stable output (meets)"
+        },
+        {
+          "need_id": "Availability of troubleshooting guides for maintenance support",
+          "score": 1,
+          "reason": "Score = 1 because service_and_support is not specified (missing)"
+        },
+        {
+          "need_id": "Compatibility with monitoring software for data logging",
+          "score": 1,
+          "reason": "Score = 1 because software_integration is not specified (missing)"
+        }
+      ],
+      "overall_assessment": "The EJX510A performs well in accuracy and temperature range but lacks in pressure range and certifications."
+    },
+    {
+      "product": "EJA510E",
+      "scores": [
+        {
+          "need_id": "Accuracy \u00b10.075% for custody transfer",
+          "score": 4,
+          "reason": "Score = 4 because accuracy = \u00b10.04% meets required \u00b10.075% (meets)"
+        },
+        {
+          "need_id": "Pressure range 0-15000 psi for wellhead applications",
+          "score": 2,
+          "reason": "Score = 2 because pressure_range = 7200 psi < required 15000 psi (falls short)"
+        },
+        {
+          "need_id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+          "score": 4,
+          "reason": "Score = 4 because temperature_range = -40 to 85\u00b0C meets required -40 to 85\u00b0C (meets)"
+        },
+        {
+          "need_id": "Certification ATEX Zone 1 for hazardous areas",
+          "score": 1,
+          "reason": "Score = 1 because certification is not specified (missing)"
+        },
+        {
+          "need_id": "Vibration-resistant housing for mechanical vibration",
+          "score": 1,
+          "reason": "Score = 1 because mechanical design is not specified (missing)"
+        },
+        {
+          "need_id": "Stable output under electrical noise for signal interference",
+          "score": 4,
+          "reason": "Score = 4 because output_signal = 4-20 mA HART meets required stable output (meets)"
+        },
+        {
+          "need_id": "Availability of troubleshooting guides for maintenance support",
+          "score": 1,
+          "reason": "Score = 1 because service_and_support is not specified (missing)"
+        },
+        {
+          "need_id": "Compatibility with monitoring software for data logging",
+          "score": 1,
+          "reason": "Score = 1 because software_integration is not specified (missing)"
+        }
+      ],
+      "overall_assessment": "The EJA510E mirrors the EJX510A's performance, excelling in accuracy and temperature but lacking in pressure range and certifications."
+    },
+    {
+      "product": "SITRANS P320",
+      "scores": [
+        {
+          "need_id": "Accuracy \u00b10.075% for custody transfer",
+          "score": 4,
+          "reason": "Score = 4 because accuracy = \u00b10.075% meets required \u00b10.075% (meets)"
+        },
+        {
+          "need_id": "Pressure range 0-15000 psi for wellhead applications",
+          "score": 3,
+          "reason": "Score = 3 because pressure_range = 10153 psi meets required 15000 psi (close)"
+        },
+        {
+          "need_id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+          "score": 4,
+          "reason": "Score = 4 because temperature_range = -40 to 100\u00b0C exceeds required -40 to 85\u00b0C (exceeds)"
+        },
+        {
+          "need_id": "Certification ATEX Zone 1 for hazardous areas",
+          "score": 1,
+          "reason": "Score = 1 because certification is not specified (missing)"
+        },
+        {
+          "need_id": "Vibration-resistant housing for mechanical vibration",
+          "score": 1,
+          "reason": "Score = 1 because mechanical design is not specified (missing)"
+        },
+        {
+          "need_id": "Stable output under electrical noise for signal interference",
+          "score": 4,
+          "reason": "Score = 4 because output_signal = 4-20 mA HART meets required stable output (meets)"
+        },
+        {
+          "need_id": "Availability of troubleshooting guides for maintenance support",
+          "score": 1,
+          "reason": "Score = 1 because service_and_support is not specified (missing)"
+        },
+        {
+          "need_id": "Compatibility with monitoring software for data logging",
+          "score": 1,
+          "reason": "Score = 1 because software_integration is not specified (missing)"
+        }
+      ],
+      "overall_assessment": "The SITRANS P320 performs well in accuracy and temperature range, with a decent pressure range but lacks certifications."
+    },
+    {
+      "product": "Deltabar PMD55B",
+      "scores": [
+        {
+          "need_id": "Accuracy \u00b10.075% for custody transfer",
+          "score": 4,
+          "reason": "Score = 4 because accuracy = \u00b10.075% meets required \u00b10.075% (meets)"
+        },
+        {
+          "need_id": "Pressure range 0-15000 psi for wellhead applications",
+          "score": 2,
+          "reason": "Score = 2 because pressure_range = 600 psi < required 15000 psi (falls short)"
+        },
+        {
+          "need_id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+          "score": 4,
+          "reason": "Score = 4 because temperature_range = -40 to 110\u00b0C exceeds required -40 to 85\u00b0C (exceeds)"
+        },
+        {
+          "need_id": "Certification ATEX Zone 1 for hazardous areas",
+          "score": 1,
+          "reason": "Score = 1 because certification is not specified (missing)"
+        },
+        {
+          "need_id": "Vibration-resistant housing for mechanical vibration",
+          "score": 1,
+          "reason": "Score = 1 because mechanical design is not specified (missing)"
+        },
+        {
+          "need_id": "Stable output under electrical noise for signal interference",
+          "score": 4,
+          "reason": "Score = 4 because output_signal = 4-20 mA HART meets required stable output (meets)"
+        },
+        {
+          "need_id": "Availability of troubleshooting guides for maintenance support",
+          "score": 1,
+          "reason": "Score = 1 because service_and_support is not specified (missing)"
+        },
+        {
+          "need_id": "Compatibility with monitoring software for data logging",
+          "score": 1,
+          "reason": "Score = 1 because software_integration is not specified (missing)"
+        }
+      ],
+      "overall_assessment": "The Deltabar PMD55B meets accuracy and temperature requirements but falls short in pressure range and lacks certifications."
+    },
+    {
+      "product": "STA700",
+      "scores": [
+        {
+          "need_id": "Accuracy \u00b10.075% for custody transfer",
+          "score": 4,
+          "reason": "Score = 4 because accuracy = \u00b10.065% meets required \u00b10.075% (meets)"
+        },
+        {
+          "need_id": "Pressure range 0-15000 psi for wellhead applications",
+          "score": 2,
+          "reason": "Score = 2 because pressure_range = 3000 psi < required 15000 psi (falls short)"
+        },
+        {
+          "need_id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+          "score": 4,
+          "reason": "Score = 4 because temperature_range = -40 to 85\u00b0C meets required -40 to 85\u00b0C (meets)"
+        },
+        {
+          "need_id": "Certification ATEX Zone 1 for hazardous areas",
+          "score": 1,
+          "reason": "Score = 1 because certification is not specified (missing)"
+        },
+        {
+          "need_id": "Vibration-resistant housing for mechanical vibration",
+          "score": 1,
+          "reason": "Score = 1 because mechanical design is not specified (missing)"
+        },
+        {
+          "need_id": "Stable output under electrical noise for signal interference",
+          "score": 4,
+          "reason": "Score = 4 because output_signal = 4-20 mA HART meets required stable output (meets)"
+        },
+        {
+          "need_id": "Availability of troubleshooting guides for maintenance support",
+          "score": 1,
+          "reason": "Score = 1 because service_and_support is not specified (missing)"
+        },
+        {
+          "need_id": "Compatibility with monitoring software for data logging",
+          "score": 1,
+          "reason": "Score = 1 because software_integration is not specified (missing)"
+        }
+      ],
+      "overall_assessment": "The STA700 performs well in accuracy and temperature range but lacks in pressure range and certifications."
+    },
+    {
+      "product": "Rosemount 3051",
+      "scores": [
+        {
+          "need_id": "Accuracy \u00b10.075% for custody transfer",
+          "score": 4,
+          "reason": "Score = 4 because accuracy = \u00b10.04% meets required \u00b10.075% (meets)"
+        },
+        {
+          "need_id": "Pressure range 0-15000 psi for wellhead applications",
+          "score": 2,
+          "reason": "Score = 2 because pressure_range = 4000 psi < required 15000 psi (falls short)"
+        },
+        {
+          "need_id": "Temperature -40\u00b0C to 85\u00b0C for harsh environments",
+          "score": 4,
+          "reason": "Score = 4 because temperature_range = -40 to 100\u00b0C exceeds required -40 to 85\u00b0C (exceeds)"
+        },
+        {
+          "need_id": "Certification ATEX Zone 1 for hazardous areas",
+          "score": 1,
+          "reason": "Score = 1 because certification is not specified (missing)"
+        },
+        {
+          "need_id": "Vibration-resistant housing for mechanical vibration",
+          "score": 1,
+          "reason": "Score = 1 because mechanical design is not specified (missing)"
+        },
+        {
+          "need_id": "Stable output under electrical noise for signal interference",
+          "score": 4,
+          "reason": "Score = 4 because output_signal = 4-20 mA HART meets required stable output (meets)"
+        },
+        {
+          "need_id": "Availability of troubleshooting guides for maintenance support",
+          "score": 1,
+          "reason": "Score = 1 because service_and_support is not specified (missing)"
+        },
+        {
+          "need_id": "Compatibility with monitoring software for data logging",
+          "score": 1,
+          "reason": "Score = 1 because software_integration is not specified (missing)"
+        }
+      ],
+      "overall_assessment": "The Rosemount 3051 meets accuracy and temperature requirements but falls short in pressure range and lacks certifications."
+    }
+  ],
+  "technical_correlations": [
+    {
+      "spec1": "accuracy",
+      "spec2": "pressure_range",
+      "correlation": "negative",
+      "explanation": "Higher accuracy may require more robust pressure handling capabilities, which can limit the range."
+    },
+    {
+      "spec1": "temperature_range",
+      "spec2": "pressure_range",
+      "correlation": "positive",
+      "explanation": "Increased temperature ranges often require stronger materials that can also handle higher pressures."
+    }
+  ],
+  "key_insights": [
+    "Most products excel in accuracy but struggle with pressure range requirements.",
+    "Temperature range is generally well met across all products, indicating a strong design focus on harsh environments."
+  ],
+  "products": {
     "Rosemount 2051": {
-      "Accuracy \u00b10.075% for custody transfer": 4,
-      "Pressure range 0-15000 psi for wellhead applications": 2,
-      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 4,
-      "Robust construction for corrosive fluids": 2,
-      "Certification ATEX Zone 1 for hazardous areas": 2,
-      "Output signal 4-20 mA or digital protocols for process control": 5,
-      "Easy installation and maintenance for minimal downtime": 3,
-      "Overpressure rating 2x maximum operating pressure for safety": 2
+      "pressure_range": "0 to 4000 psi",
+      "accuracy": "\u00b10.05%",
+      "output_signal": "4-20 mA HART, FOUNDATION Fieldbus, PROFIBUS PA",
+      "temperature_range": "-40 to 100\u00b0C",
+      "supply_voltage": "10.5-42.4 VDC",
+      "process_connection": "1/4 NPT"
     },
-    "2600T": {
-      "Accuracy \u00b10.075% for custody transfer": 4,
-      "Pressure range 0-15000 psi for wellhead applications": 2,
-      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 4,
-      "Robust construction for corrosive fluids": 2,
-      "Certification ATEX Zone 1 for hazardous areas": 2,
-      "Output signal 4-20 mA or digital protocols for process control": 5,
-      "Easy installation and maintenance for minimal downtime": 3,
-      "Overpressure rating 2x maximum operating pressure for safety": 1
+    "EJX510A": {
+      "pressure_range": "0 to 7200 psi",
+      "accuracy": "\u00b10.04%",
+      "output_signal": "4-20 mA HART, BRAIN",
+      "temperature_range": "-40 to 85\u00b0C",
+      "supply_voltage": "24 VDC",
+      "process_connection": "1/2 NPT"
     },
-    "Rosemount 3051": {
-      "Accuracy \u00b10.075% for custody transfer": 4,
-      "Pressure range 0-15000 psi for wellhead applications": 2,
-      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 4,
-      "Robust construction for corrosive fluids": 2,
-      "Certification ATEX Zone 1 for hazardous areas": 2,
-      "Output signal 4-20 mA or digital protocols for process control": 5,
-      "Easy installation and maintenance for minimal downtime": 3,
-      "Overpressure rating 2x maximum operating pressure for safety": 1
+    "EJA510E": {
+      "pressure_range": "0 to 7200 psi",
+      "accuracy": "\u00b10.04%",
+      "output_signal": "4-20 mA HART, BRAIN",
+      "temperature_range": "-40 to 85\u00b0C",
+      "supply_voltage": "24 VDC",
+      "process_connection": "1/2 NPT"
     },
-    "EJA430E": {
-      "Accuracy \u00b10.075% for custody transfer": 4,
-      "Pressure range 0-15000 psi for wellhead applications": 2,
-      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 4,
-      "Robust construction for corrosive fluids": 2,
-      "Certification ATEX Zone 1 for hazardous areas": 2,
-      "Output signal 4-20 mA or digital protocols for process control": 5,
-      "Easy installation and maintenance for minimal downtime": 3,
-      "Overpressure rating 2x maximum operating pressure for safety": 1
-    },
-    "S-20": {
-      "Accuracy \u00b10.075% for custody transfer": 3,
-      "Pressure range 0-15000 psi for wellhead applications": 1,
-      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 3,
-      "Robust construction for corrosive fluids": 2,
-      "Certification ATEX Zone 1 for hazardous areas": 1,
-      "Output signal 4-20 mA or digital protocols for process control": 3,
-      "Easy installation and maintenance for minimal downtime": 3,
-      "Overpressure rating 2x maximum operating pressure for safety": 1
+    "SITRANS P320": {
+      "pressure_range": "0.01 to 10153 psi",
+      "accuracy": "\u00b10.075%",
+      "output_signal": "4-20 mA HART",
+      "temperature_range": "-40 to 100\u00b0C",
+      "supply_voltage": "10.5-42.4 VDC",
+      "process_connection": "1/4 NPT"
     },
     "Deltabar PMD55B": {
-      "Accuracy \u00b10.075% for custody transfer": 5,
-      "Pressure range 0-15000 psi for wellhead applications": 1,
-      "Temperature -40\u00b0C to 85\u00b0C for harsh environments": 3,
-      "Robust construction for corrosive fluids": 2,
-      "Certification ATEX Zone 1 for hazardous areas": 1,
-      "Output signal 4-20 mA or digital protocols for process control": 4,
-      "Easy installation and maintenance for minimal downtime": 3,
-      "Overpressure rating 2x maximum operating pressure for safety": 1
+      "pressure_range": "10 mbar to 40 bar (0.15 psi to 600 psi)",
+      "accuracy": "\u00b10.075%",
+      "output_signal": "4-20 mA HART",
+      "temperature_range": "-40 to 110\u00b0C",
+      "supply_voltage": "10.5-35 VDC",
+      "process_connection": "1/4 NPT"
+    },
+    "STA700": {
+      "pressure_range": "0 to 3000 psi",
+      "accuracy": "\u00b10.065%",
+      "output_signal": "4-20 mA HART, FOUNDATION Fieldbus",
+      "temperature_range": "-40 to 85\u00b0C",
+      "supply_voltage": "10.5-42.4 VDC",
+      "process_connection": "1/4 NPT"
+    },
+    "Rosemount 3051": {
+      "pressure_range": "0 to 4000 psi",
+      "accuracy": "\u00b10.04%",
+      "output_signal": "4-20 mA HART, FOUNDATION Fieldbus, PROFIBUS PA",
+      "temperature_range": "-40 to 100\u00b0C",
+      "supply_voltage": "10.5-42.4 VDC",
+      "process_connection": "1/4 NPT"
     }
   },
-  "target_values": {
-    "accuracy": "\u00b10.04%",
-    "pressure_range": "0-15000 psi",
-    "temperature_range": "-40\u00b0C to 120\u00b0C",
-    "material_selection": "Compatibility with corrosive fluids",
-    "certification": "ATEX Zone 1",
-    "output_signal": "4-20 mA HART",
-    "installation_guidelines": "Proper impulse line routing and accessibility for maintenance",
-    "overpressure_rating": "2x the maximum operating pressure"
-  },
-  "summary": "The competitive landscape shows that while several products meet the accuracy requirement for custody transfer, only the Deltabar PMD55B meets the \u00b10.075% accuracy threshold. Most products fall short in pressure range capabilities, with none reaching the desired 0-15000 psi. Temperature ranges vary, with some products exceeding the -40\u00b0C to 85\u00b0C requirement. The output signal compatibility is strong across the board, particularly with HART protocols. Overall, the Deltabar PMD55B stands out for its accuracy, but there is a significant opportunity for improvement in pressure range specifications."
+  "generated_at": "2026-02-22T17:20:30.288797"
 }

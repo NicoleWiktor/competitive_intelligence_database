@@ -51,6 +51,8 @@ def main():
     print(f"   Industry Report: {has_report} ({len(result.get('report_sources', []))} sources)")
     print(f"   Customer Needs: {len(result.get('customer_needs', {}))}")
     print(f"   Need Mappings: {len(result.get('need_mappings', []))}")
+    has_hoq = "✅" if result.get('house_of_quality') else "❌"
+    print(f"   House of Quality: {has_hoq}")
     print("\n🚀 Run 'python main.py --streamlit' to view dashboard")
 
 

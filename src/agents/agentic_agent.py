@@ -130,12 +130,14 @@ class ToolState:
         self.customer_segments: List[Dict] = []  # [{name, description, evidence_text, source_url, evidence_ids}]
         self.segments_sources: List[str] = []  # URLs used to find customer segments
         self.segment_mappings: List[Dict] = []  # [{segment, product, reason, evidence_ids}]
+        self.house_of_quality: Dict = {}  # {whats, hows, matrix, competitive_analysis, reasoning}
         self.finished: bool = False
     
     def summary(self) -> str:
         report_status = "✅ Generated" if self.industry_needs_report else "❌ Not yet"
         segments_status = f"{len(self.customer_segments)} found" if self.customer_segments else "❌ Not yet"
         segment_mappings_status = f"{len(self.segment_mappings)} mappings" if self.segment_mappings else "❌ Not yet"
+        hoq_status = "✅ Generated" if self.house_of_quality else "❌ Not yet"
         return f"""Current Progress:
 - Competitors found: {len(self.competitors)} ({list(self.competitors.keys())[:5]})
 - Products found: {len(self.products)}
@@ -144,6 +146,7 @@ class ToolState:
 - Industry needs report: {report_status} ({len(self.report_sources)} sources)
 - Customer needs extracted: {len(self.customer_needs)}
 - Need-to-product mappings: {len(self.need_mappings)}
+- House of Quality: {hoq_status}
 - Searches done: {len(self.searched_queries)}
 - Pages extracted: {len(self.extracted_urls)}"""
 
@@ -1340,6 +1343,193 @@ Return ONLY valid JSON."""
         return f"Failed to map segments to products: {e}"
 
 
+@tool
+def generate_house_of_quality() -> str:
+    """
+    Generate a House of Quality (QFD) matrix.
+    This tool creates a Quality Function Deployment matrix mapping customer needs (WHATs) 
+    to product specifications (HOWs) with relationship strengths.
+    
+    Call this AFTER:
+    - Customer needs have been extracted (via map_needs_from_report)
+    - Products have been saved with specifications
+    
+    Returns:
+        Summary of the House of Quality matrix created.
+    """
+    global _tool_state
+    
+    if _tool_state.house_of_quality:
+        return f"House of Quality already generated with {len(_tool_state.house_of_quality.get('whats', []))} customer needs and {len(_tool_state.house_of_quality.get('hows', []))} specifications."
+    
+    if not _tool_state.customer_needs:
+        return "No customer needs found. Run research_industry_needs and map_needs_from_report first."
+    
+    if not _tool_state.products:
+        return "No products found. Save some products first."
+    
+    print(f"🏠 AGENT DECIDED: generate_house_of_quality()")
+    
+    llm = get_llm()
+    
+    # Prepare customer needs (WHATs)
+    whats = []
+    for need_key, need_data in _tool_state.customer_needs.items():
+        whats.append({
+            "id": need_key,
+            "name": need_data.get("name", need_key),
+            "threshold": need_data.get("threshold", ""),
+            "spec_type": need_data.get("spec_type", ""),
+            "description": need_data.get("description", "")[:200]
+        })
+    
+    # Prepare specifications (HOWs) - get unique spec types across all products
+    all_spec_types = set()
+    product_specs = {}
+    for product_name, specs in _tool_state.specifications.items():
+        product_specs[product_name] = specs
+        for spec_type in specs.keys():
+            all_spec_types.add(spec_type)
+    
+    hows = list(all_spec_types)
+    
+    # Build prompt for LLM to analyze relationships
+    prompt = f"""You are a competitive intelligence analyst performing Quality Function Deployment (QFD).
+
+TASK: Create a House of Quality matrix mapping customer needs to product specifications.
+
+CUSTOMER NEEDS (WHATs) - These are what customers want:
+{json.dumps(whats, indent=2)}
+
+PRODUCT SPECIFICATIONS (HOWs) - These are technical specs we can measure:
+{json.dumps(hows, indent=2)}
+
+PRODUCTS AND THEIR SPECS:
+{json.dumps(product_specs, indent=2)}
+
+RELATIONSHIP WEIGHTS:
+- 9 = Strong relationship (spec directly fulfills the need)
+- 3 = Medium relationship (spec partially addresses the need)
+- 1 = Weak relationship (spec has minor impact on the need)
+- 0 = No relationship
+
+COMPETITIVE SCORES (1-5):
+- 5 = Excellent - product spec exceeds required threshold
+- 4 = Good - product spec meets required threshold
+- 3 = Average - product spec is close to threshold
+- 2 = Below Average - product spec falls short of threshold
+- 1 = Poor - product spec significantly below threshold
+
+INSTRUCTIONS:
+1. For each customer need, determine which specifications influence it
+2. Assign relationship weights (0, 1, 3, or 9)
+3. For each product, assess how well it meets EACH customer need (score 1-5)
+4. CRITICAL: For EVERY score, show the derivation comparing actual spec to required threshold
+
+SCORE DERIVATION FORMAT (you MUST follow this):
+"Score = X because [spec_name] = [actual_value] [comparison] required [threshold_value]"
+
+Examples:
+- "Score = 5 because accuracy = ±0.04% < required ±0.075% (exceeds)"
+- "Score = 2 because pressure_range = 10,000 psi < required 15,000 psi (falls short)"
+- "Score = 4 because temperature_range = -40 to 85°C meets required -40 to 80°C"
+- "Score = 1 because output_signal = 4-20mA missing required HART protocol"
+
+Return ONLY valid JSON in this exact format:
+{{
+    "matrix": [
+        {{
+            "need_id": "need key from WHATs",
+            "need_name": "readable name",
+            "relationships": {{
+                "spec_type": weight,
+                "spec_type2": weight
+            }},
+            "reasoning": "Why these specs relate to this need"
+        }}
+    ],
+    "competitive_scores": [
+        {{
+            "product": "product name",
+            "scores": [
+                {{
+                    "need_id": "the customer need id",
+                    "score": 1-5,
+                    "reason": "Score = X because [spec] = [actual] vs required [threshold]"
+                }}
+            ],
+            "overall_assessment": "Brief overall assessment of this product"
+        }}
+    ],
+    "technical_correlations": [
+        {{
+            "spec1": "specification type",
+            "spec2": "specification type",
+            "correlation": "positive" | "negative" | "none",
+            "explanation": "Why these specs correlate"
+        }}
+    ],
+    "key_insights": [
+        "Important insight 1",
+        "Important insight 2"
+    ]
+}}
+
+CRITICAL: Every score reason MUST show the derivation: actual spec value compared to the required threshold from the customer need."""
+    
+    try:
+        response = llm.invoke(prompt)
+        content = response.content.strip()
+        
+        # Parse JSON from response
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        hoq_data = json.loads(content)
+        
+        # Store the House of Quality data
+        _tool_state.house_of_quality = {
+            "whats": whats,
+            "hows": hows,
+            "matrix": hoq_data.get("matrix", []),
+            "competitive_scores": hoq_data.get("competitive_scores", []),
+            "technical_correlations": hoq_data.get("technical_correlations", []),
+            "key_insights": hoq_data.get("key_insights", []),
+            "products": product_specs,
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        # Generate summary
+        num_needs = len(whats)
+        num_specs = len(hows)
+        num_products = len(product_specs)
+        num_relationships = sum(len(m.get("relationships", {})) for m in hoq_data.get("matrix", []))
+        
+        print(f"   ✅ Generated House of Quality: {num_needs} needs × {num_specs} specs, {num_products} products compared")
+        
+        result = f"""House of Quality Generated Successfully!
+
+Matrix Size: {num_needs} customer needs × {num_specs} specifications
+Products Analyzed: {num_products}
+Total Relationships Mapped: {num_relationships}
+
+Key Insights:
+"""
+        for insight in hoq_data.get("key_insights", [])[:5]:
+            result += f"• {insight}\n"
+        
+        return result
+        
+    except json.JSONDecodeError as e:
+        print(f"   ❌ JSON parse error: {e}")
+        return f"Failed to parse House of Quality response: {e}"
+    except Exception as e:
+        print(f"   ❌ House of Quality error: {e}")
+        return f"Failed to generate House of Quality: {e}"
+
+
 # =============================================================================
 # TOOLS LIST
 # =============================================================================
@@ -1354,6 +1544,7 @@ TOOLS = [
     map_needs_from_report,
     research_customer_segments,
     map_segments_to_products,
+    generate_house_of_quality,
     finish_research,
 ]
 
@@ -1369,6 +1560,7 @@ YOUR GOAL:
 2. Identify customer segments in the target industry and map products to them
 3. Generate an in-depth industry needs report (from multiple sources)
 4. Map customer needs to product specifications
+5. Build a House of Quality (QFD) matrix
 
 TOOLS AVAILABLE:
 
@@ -1385,6 +1577,9 @@ Market Research:
 Customer Needs Research (REPORT-BASED):
 - research_industry_needs: Comprehensive research - searches 8+ sources and generates an in-depth report
 - map_needs_from_report: Extracts needs from the report and maps them to your saved products
+
+Quality Function Deployment:
+- generate_house_of_quality: Creates a QFD matrix mapping customer needs (WHATs) to product specs (HOWs)
 
 Utility:
 - get_current_progress: Check what you've collected
@@ -1408,13 +1603,22 @@ PHASE 3 - CUSTOMER NEEDS REPORT:
 1. Call research_industry_needs(industry) - searches 8+ sources and generates a comprehensive report
 2. Call map_needs_from_report() - extracts specific needs and maps them to your products
 
+PHASE 4 - HOUSE OF QUALITY:
+After needs are mapped:
+1. Call generate_house_of_quality() - creates a QFD matrix showing:
+   - How each spec addresses each customer need (relationship weights 0, 1, 3, 9)
+   - Competitive scores for each product
+   - Technical correlations between specifications
+   - Key strategic insights
+
 FINISH when you have:
 - At least 3 competitors with products
 - Customer segments identified AND mapped to products
 - A generated industry needs report
 - Need-to-product mappings
+- House of Quality matrix
 
-START with Phase 1, then Phase 2, then Phase 3!"""
+START with Phase 1, then Phase 2, then Phase 3, then Phase 4!"""
 
 
 # =============================================================================
@@ -1635,8 +1839,19 @@ Start now.""")
         except Exception as e:
             print(f"   ❌ Could not auto-generate mappings: {e}")
     
+    # AUTO-COMPLETE: If customer needs exist but no House of Quality, generate it
+    if _tool_state.customer_needs and not _tool_state.house_of_quality:
+        print("\n⚠️  Customer needs exist but no House of Quality. Generating automatically...")
+        try:
+            result = generate_house_of_quality.invoke({})
+            print(f"   {result[:200]}...")
+        except Exception as e:
+            print(f"   ❌ Could not auto-generate House of Quality: {e}")
+    
     elapsed = (datetime.now() - start).total_seconds()
     total_evidence = sum(len(v) for v in _tool_state.evidence_map.values())
+    
+    hoq_status = "✅ Yes" if _tool_state.house_of_quality else "❌ No"
     
     print("\n" + "="*60)
     print(f"🏁 LANGGRAPH AGENT COMPLETE in {elapsed:.1f}s")
@@ -1647,6 +1862,7 @@ Start now.""")
     print(f"   Customer segments: {len(_tool_state.customer_segments)} ({len(_tool_state.segment_mappings)} mappings)")
     print(f"   Customer needs: {len(_tool_state.customer_needs)}")
     print(f"   Need mappings: {len(_tool_state.need_mappings)}")
+    print(f"   House of Quality: {hoq_status}")
     print(f"   Searches made: {len(_tool_state.searched_queries)}")
     print(f"   Pages extracted: {len(_tool_state.extracted_urls)}")
     print(f"   📦 Evidence chunks in ChromaDB: {total_evidence}")
@@ -1664,6 +1880,7 @@ Start now.""")
         "customer_segments": _tool_state.customer_segments,
         "segments_sources": _tool_state.segments_sources,
         "segment_mappings": _tool_state.segment_mappings,
+        "house_of_quality": _tool_state.house_of_quality,
     }
 
 
