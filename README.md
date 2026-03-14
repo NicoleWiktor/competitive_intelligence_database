@@ -129,5 +129,6 @@ Evidence verification is done through the Streamlit dashboard's **"✅ Verify Da
 | 🎯 Customer Needs | Industry needs report and product mappings |
 | 👥 Customer Segments | Customer groups with evidence and product mappings |
 | 🏠 House of Quality | QFD matrix with relationship weights and competitive scores |
+| 📈 Evaluation | Accuracy metrics comparing LLM extractions to source content |
 
 

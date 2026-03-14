@@ -103,7 +103,7 @@ def get_tavily() -> TavilyClient:
 def get_llm() -> ChatOpenAI:
     return ChatOpenAI(
         api_key=get_openai_api_key(),
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         temperature=0,
         timeout=120,  # 2 minute timeout
         max_retries=2,

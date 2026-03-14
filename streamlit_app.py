@@ -475,6 +475,206 @@ def create_comparison_table(products_df: pd.DataFrame, selected_products: List[s
 
 
 # =============================================================================
+# EVALUATION HELPER FUNCTIONS
+# =============================================================================
+
+import re
+
+def calculate_match_score(extracted_value: str, source_text: str) -> dict:
+    """
+    Calculate how well an extracted value matches the source text.
+    Returns match percentage and details.
+    """
+    if not extracted_value or not source_text:
+        return {"score": 0, "exact_match": False, "tokens_found": 0, "total_tokens": 0, "matched_tokens": [], "numbers_matched": [], "numbers_in_extraction": []}
+    
+    extracted_lower = extracted_value.lower().strip()
+    source_lower = source_text.lower()
+    
+    # Check exact match
+    exact_match = extracted_lower in source_lower
+    
+    # Token-based matching (for multi-word extractions)
+    # Remove common stop words and punctuation
+    stop_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'of', 'to', 'in', 'on', 'with', 'and', 'or'}
+    # Clean tokens - only keep meaningful words (3+ chars)
+    tokens = re.findall(r'[a-z]{3,}', extracted_lower)
+    tokens = [t for t in tokens if t and t not in stop_words]
+    
+    matched_tokens = []
+    for token in tokens:
+        if token in source_lower:
+            matched_tokens.append(token)
+    
+    tokens_found = len(matched_tokens)
+    total_tokens = len(tokens) if tokens else 1
+    token_score = (tokens_found / total_tokens) * 100 if total_tokens > 0 else 0
+    
+    # Number extraction check - handle decimals properly
+    # Match numbers including decimals like "0.075", "15000", "±0.04%"
+    numbers_in_extraction = re.findall(r'\d+\.?\d*', extracted_value)
+    # Filter out single digit numbers that are too common (0, 1, etc.)
+    numbers_in_extraction = [n for n in numbers_in_extraction if len(n) >= 2 or '.' in n]
+    
+    # Also try to match the full pattern (e.g., "7200 psi" or "0.04%")
+    # This is more meaningful than just matching "7200"
+    full_patterns_matched = []
+    numbers_matched = []
+    
+    for num in numbers_in_extraction:
+        # Check if the number appears in source with similar context
+        # Look for the number in source
+        if num in source_text:
+            numbers_matched.append(num)
+            # Try to find context around it
+            idx = source_text.find(num)
+            if idx != -1:
+                context = source_text[max(0, idx-10):idx+len(num)+15]
+                full_patterns_matched.append(context.strip())
+    
+    numbers_score = (len(numbers_matched) / len(numbers_in_extraction) * 100) if numbers_in_extraction else 100
+    
+    # Combined score (weighted average)
+    if exact_match:
+        final_score = 100
+    elif numbers_in_extraction:
+        # For specs, numbers matter more - but also credit token matches
+        final_score = (token_score * 0.3 + numbers_score * 0.7)
+    else:
+        final_score = token_score
+    
+    return {
+        "score": round(final_score, 1),
+        "exact_match": exact_match,
+        "tokens_found": tokens_found,
+        "total_tokens": total_tokens,
+        "matched_tokens": matched_tokens,
+        "numbers_matched": numbers_matched,
+        "numbers_in_extraction": numbers_in_extraction,
+        "full_patterns_matched": full_patterns_matched
+    }
+
+
+def highlight_matches(source_text: str, matched_tokens: list, max_length: int = 500) -> str:
+    """
+    Return source text with matched tokens highlighted using HTML.
+    """
+    if not source_text:
+        return "<em>No source text available</em>"
+    
+    # Truncate if too long
+    display_text = source_text[:max_length] + "..." if len(source_text) > max_length else source_text
+    
+    # Escape HTML entities first
+    display_text = display_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    
+    # Highlight matched tokens (words get green, numbers get yellow)
+    for token in matched_tokens:
+        if token:
+            # Determine if it's a number or word
+            is_number = re.match(r'^[\d.]+$', token)
+            color = "#fef08a" if is_number else "#bbf7d0"  # yellow for numbers, green for words
+            
+            # Case-insensitive replacement with highlighting
+            pattern = re.compile(re.escape(token), re.IGNORECASE)
+            display_text = pattern.sub(f'<mark style="background-color: {color}; padding: 0 2px; border-radius: 2px;">{token}</mark>', display_text)
+    
+    return display_text
+
+
+def get_score_color(score: float) -> str:
+    """Return color based on score."""
+    if score >= 80:
+        return "🟢"
+    elif score >= 50:
+        return "🟡"
+    else:
+        return "🔴"
+
+
+def evaluate_entity(entity_name: str, entity_value: str, evidence_ids: list) -> dict:
+    """
+    Evaluate a single entity against its source evidence.
+    Finds the BEST matching chunk to display.
+    """
+    if not evidence_ids:
+        return {
+            "entity": entity_name,
+            "value": entity_value,
+            "score": 0,
+            "source_text": "",
+            "match_details": {"score": 0, "exact_match": False, "matched_tokens": [], "numbers_matched": [], "numbers_in_extraction": [], "full_patterns_matched": []},
+            "has_evidence": False,
+            "evidence_ids": [],
+            "best_chunk_id": None,
+            "source_url": ""
+        }
+    
+    # Get source chunks from ChromaDB and find the BEST matching one
+    all_chunks = []  # [(chunk_id, chunk_text, source_url)]
+    for eid in evidence_ids[:10]:  # Check up to 10 chunks
+        try:
+            chunk = get_chunk_by_id(eid)
+            if chunk and isinstance(chunk, dict):
+                doc_text = chunk.get("document", "")
+                metadata = chunk.get("metadata", {})
+                source_url = metadata.get("source_url", "") if metadata else ""
+                if doc_text:
+                    all_chunks.append((eid, doc_text, source_url))
+            elif chunk and isinstance(chunk, str):
+                all_chunks.append((eid, chunk, ""))
+        except:
+            pass
+    
+    if not all_chunks:
+        return {
+            "entity": entity_name,
+            "value": entity_value,
+            "score": 0,
+            "source_text": "",
+            "match_details": {"score": 0, "exact_match": False, "matched_tokens": [], "numbers_matched": [], "numbers_in_extraction": [], "full_patterns_matched": []},
+            "has_evidence": False,
+            "evidence_ids": evidence_ids,
+            "best_chunk_id": None,
+            "source_url": ""
+        }
+    
+    # Find the chunk with the best match score
+    best_score = 0
+    best_chunk_id = None
+    best_chunk_text = ""
+    best_source_url = ""
+    best_match_details = None
+    
+    for chunk_id, chunk_text, source_url in all_chunks:
+        match_result = calculate_match_score(entity_value, chunk_text)
+        if match_result["score"] > best_score:
+            best_score = match_result["score"]
+            best_chunk_id = chunk_id
+            best_chunk_text = chunk_text
+            best_source_url = source_url
+            best_match_details = match_result
+    
+    # If no chunk had any match, still use the first chunk for display
+    if best_match_details is None:
+        best_chunk_id, best_chunk_text, best_source_url = all_chunks[0]
+        best_match_details = calculate_match_score(entity_value, best_chunk_text)
+    
+    return {
+        "entity": entity_name,
+        "value": entity_value,
+        "score": best_match_details["score"],
+        "source_text": best_chunk_text,
+        "match_details": best_match_details,
+        "has_evidence": True,
+        "evidence_ids": evidence_ids,
+        "best_chunk_id": best_chunk_id,
+        "source_url": best_source_url,
+        "total_chunks": len(all_chunks)
+    }
+
+
+# =============================================================================
 # MAIN APP
 # =============================================================================
 
@@ -538,7 +738,8 @@ def main():
         "✅ Verify Data",
         "🎯 Customer Needs",
         "👥 Customer Segments",
-        "🏠 House of Quality"
+        "🏠 House of Quality",
+        "📈 Evaluation"
     ])
     
     # === TAB 1: KNOWLEDGE GRAPH ===
@@ -1960,6 +2161,410 @@ K → °C: K - 273.15
             4. Identify technical correlations
             5. Generate strategic insights
             """)
+    
+    # === TAB 10: EVALUATION ===
+    with tabs[9]:
+        st.markdown("## 📈 Extraction Evaluation")
+        st.markdown("*Verify LLM extractions against original source content*")
+        
+        # Load all data sources
+        import os
+        
+        # Load industry report for customer needs
+        report_path = os.path.join(os.path.dirname(__file__), "industry_report.json")
+        report_data = None
+        if os.path.exists(report_path):
+            try:
+                with open(report_path, "r") as f:
+                    report_data = json.load(f)
+            except:
+                pass
+        
+        # Load customer segments
+        segments_path = os.path.join(os.path.dirname(__file__), "customer_segments.json")
+        segments_data = None
+        if os.path.exists(segments_path):
+            try:
+                with open(segments_path, "r") as f:
+                    segments_data = json.load(f)
+            except:
+                pass
+        
+        # Fetch data from Neo4j
+        driver = get_neo4j_driver()
+        
+        competitors_eval = []
+        products_eval = []
+        specs_eval = []
+        needs_eval = []
+        segments_eval = []
+        
+        try:
+            with driver.session() as session:
+                # Get competitors with evidence (evidence is on COMPETES_WITH relationship)
+                result = session.run("""
+                    MATCH (h:Company {name: 'Honeywell'})-[r:COMPETES_WITH]->(c:Company)
+                    RETURN c.name as name, r.source_urls as source_urls, r.evidence_ids as evidence_ids
+                """)
+                for record in result:
+                    evidence_ids = record['evidence_ids'] if record['evidence_ids'] else []
+                    if isinstance(evidence_ids, str):
+                        try:
+                            evidence_ids = json.loads(evidence_ids)
+                        except:
+                            evidence_ids = []
+                    source_urls = record['source_urls'] if record['source_urls'] else []
+                    competitors_eval.append({
+                        "name": record['name'],
+                        "source_url": source_urls[0] if source_urls else "",
+                        "evidence_ids": evidence_ids
+                    })
+                
+                # Get products with evidence (evidence is on OFFERS_PRODUCT relationship)
+                result = session.run("""
+                    MATCH (c:Company)-[r:OFFERS_PRODUCT]->(p:Product)
+                    RETURN p.name as name, c.name as company, r.source_urls as source_urls, r.evidence_ids as evidence_ids
+                """)
+                for record in result:
+                    evidence_ids = record['evidence_ids'] if record['evidence_ids'] else []
+                    if isinstance(evidence_ids, str):
+                        try:
+                            evidence_ids = json.loads(evidence_ids)
+                        except:
+                            evidence_ids = []
+                    source_urls = record['source_urls'] if record['source_urls'] else []
+                    products_eval.append({
+                        "name": record['name'],
+                        "company": record['company'],
+                        "source_url": source_urls[0] if source_urls else "",
+                        "evidence_ids": evidence_ids
+                    })
+                
+                # Get specifications with evidence (evidence is on HAS_SPEC relationship)
+                result = session.run("""
+                    MATCH (p:Product)-[r:HAS_SPEC]->(s:Specification)
+                    RETURN p.name as product, s.spec_type as spec_type, s.value as value, 
+                           r.source_urls as source_urls, r.evidence_ids as evidence_ids
+                """)
+                for record in result:
+                    evidence_ids = record['evidence_ids'] if record['evidence_ids'] else []
+                    if isinstance(evidence_ids, str):
+                        try:
+                            evidence_ids = json.loads(evidence_ids)
+                        except:
+                            evidence_ids = []
+                    source_urls = record['source_urls'] if record['source_urls'] else []
+                    specs_eval.append({
+                        "product": record['product'],
+                        "spec_type": record['spec_type'],
+                        "value": record['value'],
+                        "source_url": source_urls[0] if source_urls else "",
+                        "evidence_ids": evidence_ids
+                    })
+                
+                # Get customer needs with evidence
+                result = session.run("""
+                    MATCH (n:CustomerNeed)
+                    RETURN n.name as name, n.threshold as threshold, n.source_urls as source_urls, n.evidence_ids as evidence_ids
+                """)
+                for record in result:
+                    evidence_ids = record['evidence_ids'] if record['evidence_ids'] else []
+                    if isinstance(evidence_ids, str):
+                        try:
+                            evidence_ids = json.loads(evidence_ids)
+                        except:
+                            evidence_ids = []
+                    needs_eval.append({
+                        "name": record['name'],
+                        "threshold": record['threshold'] or "",
+                        "source_urls": record['source_urls'],
+                        "evidence_ids": evidence_ids
+                    })
+                
+                # Get customer segments with evidence
+                result = session.run("""
+                    MATCH (s:CustomerSegment)
+                    RETURN s.name as name, s.description as description, s.evidence_text as evidence_text,
+                           s.source_url as source_url, s.evidence_ids as evidence_ids
+                """)
+                for record in result:
+                    evidence_ids = record['evidence_ids'] if record['evidence_ids'] else []
+                    if isinstance(evidence_ids, str):
+                        try:
+                            evidence_ids = json.loads(evidence_ids)
+                        except:
+                            evidence_ids = []
+                    segments_eval.append({
+                        "name": record['name'],
+                        "description": record['description'] or "",
+                        "evidence_text": record['evidence_text'] or "",
+                        "source_url": record['source_url'],
+                        "evidence_ids": evidence_ids
+                    })
+        except Exception as e:
+            st.error(f"Error fetching data: {e}")
+        finally:
+            driver.close()
+        
+        # Calculate evaluations
+        all_evaluations = {
+            "Competitors": [],
+            "Products": [],
+            "Specifications": [],
+            "Customer Needs": [],
+            "Customer Segments": []
+        }
+        
+        # Evaluate competitors
+        for comp in competitors_eval:
+            eval_result = evaluate_entity(comp['name'], comp['name'], comp['evidence_ids'])
+            all_evaluations["Competitors"].append(eval_result)
+        
+        # Evaluate products
+        for prod in products_eval:
+            eval_result = evaluate_entity(f"{prod['company']} {prod['name']}", prod['name'], prod['evidence_ids'])
+            all_evaluations["Products"].append(eval_result)
+        
+        # Evaluate specifications
+        for spec in specs_eval:
+            eval_result = evaluate_entity(
+                f"{spec['product']} - {spec['spec_type']}", 
+                spec['value'], 
+                spec['evidence_ids']
+            )
+            all_evaluations["Specifications"].append(eval_result)
+        
+        # Evaluate customer needs
+        # Try multiple matching strategies and use the best score
+        for need in needs_eval:
+            threshold = need.get('threshold', '')
+            name = need.get('name', '')
+            display_name = f"{name}: {threshold}" if threshold else name
+            
+            # Try different values and pick the best match
+            best_result = None
+            best_score = -1
+            
+            # Strategy 1: Try just the threshold (actual numbers from source)
+            if threshold:
+                result1 = evaluate_entity(display_name, threshold, need['evidence_ids'])
+                if result1['score'] > best_score:
+                    best_score = result1['score']
+                    best_result = result1
+            
+            # Strategy 2: Try threshold + name combined
+            if threshold and name:
+                combined = f"{name} {threshold}"
+                result2 = evaluate_entity(display_name, combined, need['evidence_ids'])
+                if result2['score'] > best_score:
+                    best_score = result2['score']
+                    best_result = result2
+            
+            # Strategy 3: Just the name (fallback)
+            if name:
+                result3 = evaluate_entity(display_name, name, need['evidence_ids'])
+                if result3['score'] > best_score:
+                    best_score = result3['score']
+                    best_result = result3
+            
+            if best_result:
+                all_evaluations["Customer Needs"].append(best_result)
+            else:
+                # No match at all
+                all_evaluations["Customer Needs"].append({
+                    "entity_name": display_name,
+                    "extracted_value": threshold or name,
+                    "score": 0,
+                    "has_evidence": False,
+                    "match_details": {},
+                    "source_text": "",
+                    "source_url": "",
+                    "best_chunk_id": "",
+                    "evidence_ids_count": len(need['evidence_ids'])
+                })
+        
+        # Evaluate customer segments
+        for seg in segments_eval:
+            eval_result = evaluate_entity(seg['name'], seg['name'], seg['evidence_ids'])
+            # For segments, also check against evidence_text if available
+            if seg['evidence_text'] and eval_result['score'] < 100:
+                text_match = calculate_match_score(seg['name'], seg['evidence_text'])
+                if text_match['score'] > eval_result['score']:
+                    eval_result['score'] = text_match['score']
+                    eval_result['match_details'] = text_match
+                    eval_result['source_text'] = seg['evidence_text']
+            all_evaluations["Customer Segments"].append(eval_result)
+        
+        # === OVERALL METRICS ===
+        st.markdown("### 📊 Overall Accuracy Metrics")
+        
+        metric_cols = st.columns(5)
+        
+        for i, (entity_type, evals) in enumerate(all_evaluations.items()):
+            if evals:
+                avg_score = sum(e['score'] for e in evals) / len(evals)
+                with_evidence = sum(1 for e in evals if e['has_evidence'])
+                color = get_score_color(avg_score)
+                
+                with metric_cols[i]:
+                    st.metric(
+                        entity_type,
+                        f"{color} {avg_score:.0f}%",
+                        f"{with_evidence}/{len(evals)} with evidence"
+                    )
+        
+        st.markdown("---")
+        
+        # === DETAILED EVALUATION BY TYPE ===
+        st.markdown("### 🔍 Detailed Evaluation")
+        
+        eval_type = st.selectbox(
+            "Select entity type to evaluate:",
+            list(all_evaluations.keys())
+        )
+        
+        evaluations = all_evaluations.get(eval_type, [])
+        
+        if evaluations:
+            # Sort options
+            sort_option = st.radio(
+                "Sort by:",
+                ["Score (Low to High)", "Score (High to Low)", "Name"],
+                horizontal=True
+            )
+            
+            if sort_option == "Score (Low to High)":
+                evaluations = sorted(evaluations, key=lambda x: x['score'])
+            elif sort_option == "Score (High to Low)":
+                evaluations = sorted(evaluations, key=lambda x: x['score'], reverse=True)
+            else:
+                evaluations = sorted(evaluations, key=lambda x: x['entity'])
+            
+            # Filter for flagged items
+            show_flagged = st.checkbox("🚨 Show only flagged items (score < 50%)", value=False)
+            if show_flagged:
+                evaluations = [e for e in evaluations if e['score'] < 50]
+            
+            st.markdown(f"**{len(evaluations)} items to evaluate**")
+            
+            # Display each evaluation
+            for eval_item in evaluations:
+                score = eval_item['score']
+                color = get_score_color(score)
+                details = eval_item['match_details']
+                
+                # Build summary of matched items for the header
+                matched_summary = ""
+                matched_tokens = details.get('matched_tokens', [])
+                nums_matched = details.get('numbers_matched', [])
+                if matched_tokens or nums_matched:
+                    all_matched = matched_tokens + nums_matched
+                    matched_summary = f" | Found: {', '.join(all_matched[:3])}" + ("..." if len(all_matched) > 3 else "")
+                
+                with st.expander(f"{color} **{eval_item['entity']}** — {score:.0f}% match{matched_summary}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("#### 🤖 LLM Extracted")
+                        st.code(eval_item['value'], language=None)
+                        
+                        # Match details
+                        st.markdown(f"**Exact match:** {'✅ Yes' if details.get('exact_match') else '❌ No'}")
+                        
+                        # Show matched tokens
+                        if matched_tokens:
+                            st.success(f"**Words found:** `{', '.join(matched_tokens)}`")
+                        else:
+                            tokens_total = details.get('total_tokens', 0)
+                            if tokens_total > 0:
+                                st.warning(f"**Words:** 0/{tokens_total} matched")
+                        
+                        # Show numbers
+                        nums_total = details.get('numbers_in_extraction', [])
+                        if nums_total:
+                            st.markdown(f"**Numbers extracted:** `{', '.join(nums_total)}`")
+                            if nums_matched:
+                                st.success(f"**Found in source:** `{', '.join(nums_matched)}`")
+                                # Show context where found
+                                patterns = details.get('full_patterns_matched', [])
+                                if patterns:
+                                    st.markdown("**Context where found:**")
+                                    for p in patterns[:2]:
+                                        st.code(f"...{p}...", language=None)
+                            else:
+                                st.error("**NOT found in source chunks**")
+                        
+                        # Debug info
+                        st.markdown("---")
+                        total_chunks = eval_item.get('total_chunks', len(eval_item.get('evidence_ids', [])))
+                        st.caption(f"Searched {total_chunks} chunks, showing best match")
+                    
+                    with col2:
+                        st.markdown("#### 📄 Best Matching Chunk")
+                        if eval_item['has_evidence'] and eval_item['source_text']:
+                            # Show source URL
+                            source_url = eval_item.get('source_url', '')
+                            if source_url:
+                                st.markdown(f"**Source:** [{source_url[:60]}...]({source_url})")
+                            
+                            # Highlight both tokens and numbers
+                            all_matches = matched_tokens + nums_matched
+                            highlighted = highlight_matches(eval_item['source_text'], all_matches, max_length=1200)
+                            st.markdown(highlighted, unsafe_allow_html=True)
+                            st.caption(f"Chunk: {eval_item.get('best_chunk_id', 'unknown')[:40]}...")
+                        else:
+                            st.warning("No evidence found in ChromaDB for this item.")
+                            st.caption("This could mean: 1) No evidence_ids linked, 2) Chunks deleted from ChromaDB, or 3) ChromaDB was reset")
+        else:
+            st.info(f"No {eval_type.lower()} found to evaluate.")
+        
+        st.markdown("---")
+        
+        # === SUMMARY TABLE ===
+        st.markdown("### 📋 Evaluation Summary Table")
+        
+        summary_data = []
+        for entity_type, evals in all_evaluations.items():
+            if evals:
+                scores = [e['score'] for e in evals]
+                with_evidence = sum(1 for e in evals if e['has_evidence'])
+                flagged = sum(1 for e in evals if e['score'] < 50)
+                summary_data.append({
+                    "Entity Type": entity_type,
+                    "Total": len(evals),
+                    "With Evidence": with_evidence,
+                    "Avg Score": f"{sum(scores)/len(scores):.1f}%",
+                    "Min Score": f"{min(scores):.1f}%",
+                    "Max Score": f"{max(scores):.1f}%",
+                    "Flagged (<50%)": flagged
+                })
+        
+        if summary_data:
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Debug section
+        with st.expander("🔧 Debug: Raw Data"):
+            st.markdown("**Data Retrieved from Neo4j:**")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"- Competitors: {len(competitors_eval)}")
+                st.markdown(f"- Products: {len(products_eval)}")
+                st.markdown(f"- Specifications: {len(specs_eval)}")
+            with col2:
+                st.markdown(f"- Customer Needs: {len(needs_eval)}")
+                st.markdown(f"- Customer Segments: {len(segments_eval)}")
+            
+            st.markdown("**Sample Evidence IDs (first 3 specs):**")
+            for i, spec in enumerate(specs_eval[:3]):
+                ev_ids = spec.get('evidence_ids', [])
+                st.markdown(f"- `{spec['product']} - {spec['spec_type']}`: {len(ev_ids)} IDs → `{ev_ids[:2] if ev_ids else 'NONE'}`...")
+            
+            st.markdown("**Note:** If evidence_ids is empty, the data may not have been linked properly during extraction, or ChromaDB was reset.")
+        
+        st.caption("Evaluation compares LLM extractions against source content stored in ChromaDB. Higher scores indicate the extracted value appears in the original source text.")
 
 
 if __name__ == "__main__":
