@@ -1,448 +1,101 @@
 {
   "segments": [
     {
-      "name": "Oil & Gas Operators",
-      "description": "Operators involved in oil and gas drilling, production, and refining who require rugged and precise measurement and control equipment for harsh environments.",
-      "evidence_text": "Whether you're monitoring pressure on an offshore platform or controlling flow in a refinery, we offer rugged and precise equipment to meet your exact needs",
-      "source_url": "https://www.transmittershop.com/industry/oil-and-gas/",
+      "name": "Upstream Oil & Gas Operators",
+      "description": "Companies involved in exploration and production of oil and gas",
+      "evidence_text": "Primary applications for the low-power transmitter is in the upstream oil & gas industry. There, ABB transmitters are used to measure gauge pressure measurements on casing and tubing on well heads",
+      "source_url": "https://library.e.abb.com/public/f888877639e140d7b30d90014cca495a/SS_266HSH_LOW-EN_A_Q4_WEB.pdf",
       "evidence_ids": [
-        "chunk_f8130742c39a_0_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_1_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_2_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_3_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_4_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_5_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_6_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_7_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_8_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_9_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_10_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_11_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_12_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_13_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_14_2026-03-14T19-23-22-581883"
+        "chunk_590e968040f4_0_2026-05-02T23-52-12-532440",
+        "chunk_590e968040f4_1_2026-05-02T23-52-12-532440",
+        "chunk_590e968040f4_2_2026-05-02T23-52-12-532440",
+        "chunk_590e968040f4_3_2026-05-02T23-52-12-532440",
+        "chunk_590e968040f4_4_2026-05-02T23-52-12-532440"
       ],
       "industry": "oil and gas"
     },
     {
-      "name": "Mud Logging Service Providers",
-      "description": "Entities that perform mud logging by monitoring drilling fluid pressure and flow to analyze drilling activity and ensure safety and efficiency.",
-      "evidence_text": "Oil Mud Logging For example, oil mud logging applications (see Figure 1) require a series of pressure sensors to be connected to the drilling apparatus and installed in specialized equipment to monitor or \u201clog\u201d the drill\u2019s activity.",
-      "source_url": "https://prod-edam.honeywell.com/content/dam/honeywell-edam/sps/siot/ja/products/test-and-measurement-products/pressure-transducers/oil-gas/common/documents/sps-siot-siot-wing-union-434-435-437-press-apn-en-ltr-0420-v5-008875-5-en-ciid-151598.pdf",
-      "evidence_ids": [
-        "chunk_ce5de4c7b0dc_0_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_1_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_2_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_3_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_4_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_5_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_6_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_7_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_8_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_9_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_10_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_11_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_12_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_13_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_14_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_15_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_16_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_17_2026-03-14T19-23-26-520719"
-      ],
-      "industry": "oil and gas"
-    },
-    {
-      "name": "Drilling Operations Teams",
-      "description": "Teams responsible for drilling operations who use pressure sensors to monitor wellbore pressure and maintain drilling safety and stability.",
-      "evidence_text": "During drilling operations, pressure sensors are used to monitor the wellbore pressure, ensuring the stability and safety of the drilling process.",
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "industry": "oil and gas"
-    },
-    {
-      "name": "Production Monitoring Operators",
-      "description": "Operators monitoring oil and gas production wells to track reservoir pressure, flow rates, and equipment performance over the life of the well.",
-      "evidence_text": "Pressure sensors are crucial for monitoring the production of oil and gas from wells, as they provide essential information about reservoir pressure, flow rates, and equipment performance.",
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "industry": "oil and gas"
-    },
-    {
-      "name": "Pipeline Operators",
-      "description": "Operators managing pipelines for transportation of oil and gas who require accurate pressure measurements to maintain safe and efficient pipeline operations.",
-      "evidence_text": "Accurate pressure measurements are essential for maintaining the safe and efficient operation of pipelines used to transport oil and gas.",
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "industry": "oil and gas"
-    },
-    {
-      "name": "Subsea and Offshore Operators",
-      "description": "Operators working in subsea and offshore environments who need explosion-proof and intrinsically safe pressure transmitters for harsh underwater conditions.",
+      "name": "Onshore, Offshore and Subsea Oil & Gas Operators",
+      "description": "Operators managing oil and gas extraction and production in onshore, offshore, and subsea environments requiring explosion-proof and intrinsically safe pressure transmitters",
       "evidence_text": "STS designs and manufactures a variety of pressure transmitters and transducers for oil and gas applications, including onshore, offshore and subsea. Our sensors are certified both explosion-proof and intrinsically safe, providing the required precision and long-term stability in these challenging environments.",
       "source_url": "https://stssensors.com/oil-gas-and-subsea-technology",
       "evidence_ids": [
-        "chunk_eab9e5411f77_0_2026-03-14T19-23-24-590520",
-        "chunk_eab9e5411f77_1_2026-03-14T19-23-24-590520",
-        "chunk_eab9e5411f77_2_2026-03-14T19-23-24-590520"
+        "chunk_eab9e5411f77_0_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_1_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_2_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_3_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_4_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_5_2026-05-02T23-52-19-182097"
       ],
       "industry": "oil and gas"
     },
     {
-      "name": "Well Stimulation and Development Teams",
-      "description": "Teams involved in well stimulation processes such as fracturing and acidizing, as well as well development activities like casing and cementing, using pressure sensors for measurement and monitoring.",
-      "evidence_text": "Well stimulation (fracturing and acidizing), mud logging, and well development (casing and cementing) are vital oil and gas processes that utilize pressure sensors for measurement and monitoring functions.",
-      "source_url": "https://prod-edam.honeywell.com/content/dam/honeywell-edam/sps/siot/ja/products/test-and-measurement-products/pressure-transducers/oil-gas/common/documents/sps-siot-siot-wing-union-434-435-437-press-apn-en-ltr-0420-v5-008875-5-en-ciid-151598.pdf",
+      "name": "Midstream Pipeline and Storage Operators",
+      "description": "Companies involved in transportation, storage, and processing of hydrocarbons from upstream facilities to refineries or distribution centers, requiring flow and pressure measurement for pipeline monitoring, tanker loading/unloading, and storage tank management",
+      "evidence_text": "In the oil and gas industry, midstream operations encompass the transportation, storage, and processing of extracted hydrocarbons from upstream facilities to refineries or distribution centers. One primary application of flow measurement in midstream operations is Pipeline Monitoring. Accurate measurement of flow rates within pipelines is essential for maintaining operational efficiency, detecting leaks or irregularities, and ensuring the integrity of the transportation system.",
+      "source_url": "https://www.burak.in/industry/oil-gas-industry/midstream-flow-measurement-in-oil-gas-industry?srsltid=AfmBOoqieqVpG5Ea8SR9Uc4Pd5NOeFOvkqH6jzLx3AUkvrSQr_RcD_M7",
       "evidence_ids": [
-        "chunk_ce5de4c7b0dc_0_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_1_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_2_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_3_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_4_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_5_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_6_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_7_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_8_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_9_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_10_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_11_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_12_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_13_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_14_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_15_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_16_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_17_2026-03-14T19-23-26-520719"
+        "chunk_bdd608675526_0_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_1_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_2_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_3_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_4_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_5_2026-05-02T23-52-28-552750"
       ],
       "industry": "oil and gas"
     }
   ],
   "sources": [
-    "https://www.transmittershop.com/industry/oil-and-gas/",
+    "https://library.e.abb.com/public/f888877639e140d7b30d90014cca495a/SS_266HSH_LOW-EN_A_Q4_WEB.pdf",
+    "https://www.noshok.com/support/support-tools-faq/application-insights/the-important-role-of-pressure-transmitters-in-the-oil-gas-industry/",
+    "https://www.microsensorcorp.com/Details_Pressure-Transmitters-for-Oil-Gas-Lift-Systems.html",
     "https://stssensors.com/oil-gas-and-subsea-technology",
-    "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/",
-    "https://prod-edam.honeywell.com/content/dam/honeywell-edam/sps/siot/ja/products/test-and-measurement-products/pressure-transducers/oil-gas/common/documents/sps-siot-siot-wing-union-434-435-437-press-apn-en-ltr-0420-v5-008875-5-en-ciid-151598.pdf",
-    "https://dataintelo.com/report/pressure-transmitters-for-oil-and-gas-market",
-    "https://www.linkedin.com/pulse/pressure-level-temperature-transmitters-oil-gas-market-size-egsdf",
-    "https://www.marketresearchfuture.com/reports/pressure-transmitters-market-5667",
-    "https://www.fortunebusinessinsights.com/industry-reports/pressure-transmitter-market-101196"
+    "https://www.fortunebusinessinsights.com/industry-reports/pressure-transmitter-market-101196",
+    "https://www.hawkmeasurement.com/industries/oil-and-gas/midstream-flow-metering-solutions/",
+    "https://www.burak.in/industry/oil-gas-industry/midstream-flow-measurement-in-oil-gas-industry?srsltid=AfmBOoqieqVpG5Ea8SR9Uc4Pd5NOeFOvkqH6jzLx3AUkvrSQr_RcD_M7",
+    "https://unitedmeasurementllc.com/index.php/industries-we-serve/pipeline-midstream-companies"
   ],
   "segment_mappings": [
     {
-      "segment": "Oil & Gas Operators",
-      "product": "Rosemount 3051S",
-      "reason": "Wide pressure range up to 4000 psi, high accuracy \u00b10.025%, rugged for harsh environments, trusted Emerson brand",
+      "segment": "Upstream Oil & Gas Operators",
+      "product": "EJA110E",
+      "reason": "Suitable for exploration and production environments due to its wide pressure range (-0.5 to 14 MPa / -71 to 2000 psi), high accuracy (\u00b10.04% of span)",
       "evidence_ids": [
-        "chunk_f8130742c39a_0_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_1_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_2_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_3_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_4_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_5_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_6_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_7_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_8_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_9_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_10_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_11_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_12_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_13_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_14_2026-03-14T19-23-22-581883"
+        "chunk_590e968040f4_0_2026-05-02T23-52-12-532440",
+        "chunk_590e968040f4_1_2026-05-02T23-52-12-532440",
+        "chunk_590e968040f4_2_2026-05-02T23-52-12-532440",
+        "chunk_590e968040f4_3_2026-05-02T23-52-12-532440",
+        "chunk_590e968040f4_4_2026-05-02T23-52-12-532440"
       ],
-      "source_url": "https://www.transmittershop.com/industry/oil-and-gas/"
+      "source_url": "https://library.e.abb.com/public/f888877639e140d7b30d90014cca495a/SS_266HSH_LOW-EN_A_Q4_WEB.pdf"
     },
     {
-      "segment": "Oil & Gas Operators",
-      "product": "EJA510E/EJA530E",
-      "reason": "High pressure range up to 7200 psi, accuracy \u00b10.055%, suitable for precise measurement in oil & gas, Yokogawa is well-known in the industry",
+      "segment": "Onshore, Offshore and Subsea Oil & Gas Operators",
+      "product": "Cerabar PMP71B",
+      "reason": "Offers a very wide pressure range (400 mbar to 700 bar / 1.5 psi to 10,500 psi) and high accuracy (up to 0.025%), suitable for explosion-proof and int",
       "evidence_ids": [
-        "chunk_f8130742c39a_0_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_1_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_2_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_3_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_4_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_5_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_6_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_7_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_8_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_9_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_10_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_11_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_12_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_13_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_14_2026-03-14T19-23-22-581883"
-      ],
-      "source_url": "https://www.transmittershop.com/industry/oil-and-gas/"
-    },
-    {
-      "segment": "Oil & Gas Operators",
-      "product": "SITRANS P320/P420",
-      "reason": "Very wide pressure range up to 10153 psi, good accuracy \u00b10.04-0.1%, flange connections for rugged installations, Siemens brand recognized in oil & gas",
-      "evidence_ids": [
-        "chunk_f8130742c39a_0_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_1_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_2_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_3_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_4_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_5_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_6_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_7_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_8_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_9_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_10_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_11_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_12_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_13_2026-03-14T19-23-22-581883",
-        "chunk_f8130742c39a_14_2026-03-14T19-23-22-581883"
-      ],
-      "source_url": "https://www.transmittershop.com/industry/oil-and-gas/"
-    },
-    {
-      "segment": "Mud Logging Service Providers",
-      "product": "Rosemount 3051S",
-      "reason": "Accurate pressure measurement (\u00b10.025%), suitable pressure range, reliable output signals (HART, WirelessHART) for monitoring drilling fluid",
-      "evidence_ids": [
-        "chunk_ce5de4c7b0dc_0_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_1_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_2_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_3_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_4_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_5_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_6_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_7_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_8_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_9_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_10_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_11_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_12_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_13_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_14_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_15_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_16_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_17_2026-03-14T19-23-26-520719"
-      ],
-      "source_url": "https://prod-edam.honeywell.com/content/dam/honeywell-edam/sps/siot/ja/products/test-and-measurement-products/pressure-transducers/oil-gas/common/documents/sps-siot-siot-wing-union-434-435-437-press-apn-en-ltr-0420-v5-008875-5-en-ciid-151598.pdf"
-    },
-    {
-      "segment": "Mud Logging Service Providers",
-      "product": "EJA510E/EJA530E",
-      "reason": "Pressure range covers drilling fluid pressures, good accuracy \u00b10.055%, multiple output protocols for integration",
-      "evidence_ids": [
-        "chunk_ce5de4c7b0dc_0_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_1_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_2_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_3_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_4_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_5_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_6_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_7_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_8_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_9_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_10_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_11_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_12_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_13_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_14_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_15_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_16_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_17_2026-03-14T19-23-26-520719"
-      ],
-      "source_url": "https://prod-edam.honeywell.com/content/dam/honeywell-edam/sps/siot/ja/products/test-and-measurement-products/pressure-transducers/oil-gas/common/documents/sps-siot-siot-wing-union-434-435-437-press-apn-en-ltr-0420-v5-008875-5-en-ciid-151598.pdf"
-    },
-    {
-      "segment": "Drilling Operations Teams",
-      "product": "Rosemount 3051S",
-      "reason": "High accuracy and wide temperature range (-200 to 850 \u00b0C) ideal for wellbore pressure monitoring in harsh drilling environments",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/"
-    },
-    {
-      "segment": "Drilling Operations Teams",
-      "product": "EJA510E/EJA530E",
-      "reason": "High pressure range and accuracy suitable for wellbore pressure monitoring, reliable Yokogawa product",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/"
-    },
-    {
-      "segment": "Production Monitoring Operators",
-      "product": "Rosemount 3051S",
-      "reason": "Accurate and stable pressure measurement over time, wide pressure and temperature ranges for production well monitoring",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/"
-    },
-    {
-      "segment": "Production Monitoring Operators",
-      "product": "SITRANS P320/P420",
-      "reason": "Wide pressure range and flange connections suitable for production equipment, Siemens brand trusted for production monitoring",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/"
-    },
-    {
-      "segment": "Pipeline Operators",
-      "product": "SITRANS P320/P420",
-      "reason": "High pressure range up to 10153 psi, flange connections for pipeline integration, accuracy suitable for safe pipeline operation",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/"
-    },
-    {
-      "segment": "Pipeline Operators",
-      "product": "2600T Series Model 265J",
-      "reason": "Pressure range up to 1450 psi suitable for many pipeline applications, PROFIBUS-PA output for integration, ABB brand recognized in pipeline instrument",
-      "evidence_ids": [
-        "chunk_0b136f914ba1_0_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_1_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_2_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_3_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_4_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_5_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_6_2026-03-14T19-23-25-418192",
-        "chunk_0b136f914ba1_7_2026-03-14T19-23-25-418192"
-      ],
-      "source_url": "https://xdbsensor.com/the-top-5-pressure-sensor-applications-in-the-oil-and-gas-industry/"
-    },
-    {
-      "segment": "Subsea and Offshore Operators",
-      "product": "Rosemount 3051S",
-      "reason": "Rugged design, wide temperature range, and Emerson\u2019s explosion-proof options suitable for harsh subsea/offshore environments",
-      "evidence_ids": [
-        "chunk_eab9e5411f77_0_2026-03-14T19-23-24-590520",
-        "chunk_eab9e5411f77_1_2026-03-14T19-23-24-590520",
-        "chunk_eab9e5411f77_2_2026-03-14T19-23-24-590520"
+        "chunk_eab9e5411f77_0_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_1_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_2_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_3_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_4_2026-05-02T23-52-19-182097",
+        "chunk_eab9e5411f77_5_2026-05-02T23-52-19-182097"
       ],
       "source_url": "https://stssensors.com/oil-gas-and-subsea-technology"
     },
     {
-      "segment": "Subsea and Offshore Operators",
-      "product": "EJA510E/EJA530E",
-      "reason": "High pressure range and Yokogawa\u2019s intrinsically safe designs fit subsea/offshore requirements",
+      "segment": "Midstream Pipeline and Storage Operators",
+      "product": "Rosemount 3051",
+      "reason": "Ideal for pipeline monitoring and storage tank management due to its versatile pressure range (0 to 25 inH2O up to 0 to 10000 psi), high accuracy (0.0",
       "evidence_ids": [
-        "chunk_eab9e5411f77_0_2026-03-14T19-23-24-590520",
-        "chunk_eab9e5411f77_1_2026-03-14T19-23-24-590520",
-        "chunk_eab9e5411f77_2_2026-03-14T19-23-24-590520"
+        "chunk_bdd608675526_0_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_1_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_2_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_3_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_4_2026-05-02T23-52-28-552750",
+        "chunk_bdd608675526_5_2026-05-02T23-52-28-552750"
       ],
-      "source_url": "https://stssensors.com/oil-gas-and-subsea-technology"
-    },
-    {
-      "segment": "Well Stimulation and Development Teams",
-      "product": "Rosemount 3051S",
-      "reason": "High accuracy and wide pressure range support fracturing and cementing pressure monitoring",
-      "evidence_ids": [
-        "chunk_ce5de4c7b0dc_0_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_1_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_2_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_3_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_4_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_5_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_6_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_7_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_8_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_9_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_10_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_11_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_12_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_13_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_14_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_15_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_16_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_17_2026-03-14T19-23-26-520719"
-      ],
-      "source_url": "https://prod-edam.honeywell.com/content/dam/honeywell-edam/sps/siot/ja/products/test-and-measurement-products/pressure-transducers/oil-gas/common/documents/sps-siot-siot-wing-union-434-435-437-press-apn-en-ltr-0420-v5-008875-5-en-ciid-151598.pdf"
-    },
-    {
-      "segment": "Well Stimulation and Development Teams",
-      "product": "EJA510E/EJA530E",
-      "reason": "Pressure range and accuracy suitable for stimulation and development pressure measurement",
-      "evidence_ids": [
-        "chunk_ce5de4c7b0dc_0_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_1_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_2_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_3_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_4_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_5_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_6_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_7_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_8_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_9_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_10_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_11_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_12_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_13_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_14_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_15_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_16_2026-03-14T19-23-26-520719",
-        "chunk_ce5de4c7b0dc_17_2026-03-14T19-23-26-520719"
-      ],
-      "source_url": "https://prod-edam.honeywell.com/content/dam/honeywell-edam/sps/siot/ja/products/test-and-measurement-products/pressure-transducers/oil-gas/common/documents/sps-siot-siot-wing-union-434-435-437-press-apn-en-ltr-0420-v5-008875-5-en-ciid-151598.pdf"
+      "source_url": "https://www.burak.in/industry/oil-gas-industry/midstream-flow-measurement-in-oil-gas-industry?srsltid=AfmBOoqieqVpG5Ea8SR9Uc4Pd5NOeFOvkqH6jzLx3AUkvrSQr_RcD_M7"
     }
   ],
   "industry": "oil and gas"
